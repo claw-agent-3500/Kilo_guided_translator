@@ -89,6 +89,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
                     source_text TEXT,
+                    skeleton TEXT,
                     pages INTEGER DEFAULT 1,
                     word_count INTEGER DEFAULT 0,
                     language TEXT DEFAULT 'en',
@@ -96,6 +97,12 @@ class Database:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Migration: add skeleton column to existing documents tables
+            try:
+                cursor.execute("ALTER TABLE documents ADD COLUMN skeleton TEXT")
+            except Exception:
+                pass  # Column already exists
             
             # Nodes table (text blocks with state)
             cursor.execute("""
@@ -104,6 +111,7 @@ class Database:
                     document_id INTEGER NOT NULL,
                     idx INTEGER NOT NULL,
                     content TEXT NOT NULL,
+                    chunk_tag TEXT,
                     translation TEXT,
                     state TEXT DEFAULT 'pending',
                     confidence REAL,
@@ -115,6 +123,12 @@ class Database:
                     FOREIGN KEY (document_id) REFERENCES documents(id)
                 )
             """)
+
+            # Migration: add chunk_tag column to existing nodes tables
+            try:
+                cursor.execute("ALTER TABLE nodes ADD COLUMN chunk_tag TEXT")
+            except Exception:
+                pass  # Column already exists
             
             # Translations history table
             cursor.execute("""
@@ -200,12 +214,13 @@ class Database:
             node_ids = []
             for i, block in enumerate(blocks):
                 cursor.execute("""
-                    INSERT INTO nodes (document_id, idx, content, block_type, state)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO nodes (document_id, idx, content, chunk_tag, block_type, state)
+                    VALUES (?, ?, ?, ?, ?, ?)
                 """, (
                     document_id,
                     i,
                     block.get("content", ""),
+                    block.get("chunk_tag"),       # None for legacy/non-skeleton nodes
                     block.get("type", "paragraph"),
                     NodeState.PENDING.value
                 ))
@@ -363,8 +378,59 @@ class Database:
             """, (NodeState.PENDING.value, node_id))
             return cursor.rowcount > 0
     
+    # ==================== Skeleton & State ====================
+
+    def save_skeleton(self, document_id: int, skeleton: str) -> bool:
+        """Persist the Markdown skeleton for a document."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE documents SET skeleton = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (skeleton, document_id))
+            return cursor.rowcount > 0
+
+    def get_skeleton(self, document_id: int) -> Optional[str]:
+        """Retrieve the Markdown skeleton for a document. Returns None if not set."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT skeleton FROM documents WHERE id = ?", (document_id,))
+            row = cursor.fetchone()
+            return row["skeleton"] if row else None
+
+    def get_nodes_with_tags(
+        self,
+        document_id: int,
+        include_pending: bool = False
+    ) -> List[Dict]:
+        """
+        Retrieve (chunk_tag, content, translation, state) for all tagged nodes of a document.
+
+        Args:
+            include_pending: If True, also include pending/untranslated nodes
+                             so the caller can substitute the original English.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if include_pending:
+                cursor.execute("""
+                    SELECT chunk_tag, content, translation, state
+                    FROM nodes
+                    WHERE document_id = ? AND chunk_tag IS NOT NULL
+                    ORDER BY idx
+                """, (document_id,))
+            else:
+                cursor.execute("""
+                    SELECT chunk_tag, content, translation, state
+                    FROM nodes
+                    WHERE document_id = ? AND chunk_tag IS NOT NULL
+                          AND state IN ('approved', 'completed')
+                    ORDER BY idx
+                """, (document_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
     # ==================== Statistics ====================
-    
+
     def get_document_stats(self, document_id: int) -> Dict:
         """Get translation statistics for a document."""
         with self.get_connection() as conn:

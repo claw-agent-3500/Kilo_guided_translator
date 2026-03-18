@@ -19,6 +19,7 @@ import { translateChunks, calculateCoverage, setApiKeys, hasPaidKeys, skipToPaid
 import { analyzeEdit, extractTerminologyChanges, RefinementPattern } from './services/editAnalysisService';
 import { addUserPreference } from './services/userGlossaryService'; // Corrected imports
 import { storageService } from './services/storageService';
+import { exportMarkdown } from './services/apiClient'; // Skeleton export
 import ApiKeyManager from './components/ApiKeyManager'; // Import Key Manager
 import type { GlossaryEntry, TranslatedChunk, TranslationProgress, AppStatus, Chunk, Project, TokenUsage } from './types';
 import TokenStats from './components/TokenStats'; // Import TokenStats component
@@ -361,6 +362,30 @@ export default function App() {
     };
 
 
+    // ---- Skeleton & State: Export Markdown ----
+    const handleExportMarkdown = async () => {
+        const docId = loadedDocument?.backendDocId;
+        if (!docId) {
+            alert('No backend document ID. Please re-upload the document to generate a skeleton.');
+            return;
+        }
+        try {
+            const blob = await exportMarkdown(docId, true);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = (currentProject?.standardTitle || 'translation') + '_translated.md';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('[Export Markdown] Failed:', err);
+            alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    };
+
+
     // Memoize the chunk slicing to prevent re-renders and state loss
     const editingChunks = useMemo(() => {
         const start = currentEditPage * 4;
@@ -694,15 +719,36 @@ export default function App() {
                 {/* Main Content Area - Translation View (hidden when review complete) */}
                 {(status === 'complete' || status === 'translating') && !editMode && !reviewComplete && (
                     <>
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-3">
                             {status === 'complete' && (
-                                <button
-                                    onClick={() => setEditMode(true)}
-                                    className="px-6 py-3 bg-violet-600 text-white rounded-xl hover:bg-violet-700 shadow-lg shadow-violet-200 transition-all font-semibold flex items-center gap-2"
-                                >
-                                    <Settings className="w-4 h-4" />
-                                    Enter Edit & Refine Mode
-                                </button>
+                                <>
+                                    <button
+                                        onClick={handleStartTranslation}
+                                        className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg transition-all font-semibold flex items-center gap-2"
+                                    >
+                                        <CheckCircle className="w-4 h-4" />
+                                        Re-Translate
+                                    </button>
+
+                                    {loadedDocument?.backendDocId && (
+                                        <button
+                                            id="export-markdown-btn"
+                                            onClick={handleExportMarkdown}
+                                            className="px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all font-semibold flex items-center gap-2"
+                                            title="Export translated Markdown using Skeleton+State (structure-safe)" 
+                                        >
+                                            ↓ Export Markdown
+                                        </button>
+                                    )}
+
+                                    <button
+                                        onClick={() => setEditMode(true)}
+                                        className="px-6 py-3 bg-violet-600 text-white rounded-xl hover:bg-violet-700 shadow-lg shadow-violet-200 transition-all font-semibold flex items-center gap-2"
+                                    >
+                                        <Settings className="w-4 h-4" />
+                                        Enter Edit &amp; Refine Mode
+                                    </button>
+                                </>
                             )}
                         </div>
                         <TranslationPanel

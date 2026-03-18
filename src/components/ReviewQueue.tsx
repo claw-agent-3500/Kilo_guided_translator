@@ -136,6 +136,46 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
         });
     };
 
+    // Detect whether text is an HTML table chunk from MinerU
+    const isHtmlTable = (text: string) => /<table[\s>]/i.test(text);
+
+    // Inject scoped table styles into the HTML string so the rendered table
+    // looks good inside the dark review panel without affecting global CSS.
+    const styledTableHtml = (html: string) => `
+        <style>
+            .rq-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+            .rq-table td, .rq-table th {
+                border: 1px solid #444;
+                padding: 6px 10px;
+                text-align: left;
+                vertical-align: top;
+                line-height: 1.5;
+            }
+            .rq-table tr:nth-child(odd)  { background: #1e1e30; }
+            .rq-table tr:nth-child(even) { background: #25253a; }
+            .rq-table tr:first-child td, .rq-table tr:first-child th {
+                background: #2d2d4a;
+                font-weight: 600;
+                color: #c4b5fd;
+            }
+        </style>
+        ${html.replace(/<table/gi, '<table class="rq-table"')}
+    `;
+
+    // Render a chunk — HTML table or plain text
+    const renderContent = (text: string | null | undefined, fallback: string = 'No content') => {
+        if (!text) return <span style={{ color: '#666', fontStyle: 'italic' }}>{fallback}</span>;
+        if (isHtmlTable(text)) {
+            return (
+                <div
+                    style={{ overflowX: 'auto' }}
+                    dangerouslySetInnerHTML={{ __html: styledTableHtml(text) }}
+                />
+            );
+        }
+        return <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>;
+    };
+
     // Get state badge color
     const getStateBadge = (state: ReviewNode['state']) => {
         const colors: Record<ReviewNode['state'], { bg: string; text: string }> = {
@@ -323,7 +363,7 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
                                                 borderRadius: '6px',
                                                 lineHeight: '1.7'
                                             }}>
-                                                {node.content}
+                                                {renderContent(node.content)}
                                             </div>
                                         </div>
 
@@ -399,7 +439,7 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
                                                     color: node.translation ? '#e0e0e0' : '#666',
                                                     fontStyle: node.translation ? 'normal' : 'italic'
                                                 }}>
-                                                    {node.translation || 'No translation yet'}
+                                                    {renderContent(node.translation, 'No translation yet')}
                                                 </div>
                                             )}
                                         </div>

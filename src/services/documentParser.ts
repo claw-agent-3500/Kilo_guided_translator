@@ -245,10 +245,30 @@ export async function extractStructuredContent(
     _useMinerU: boolean = true,    // DEPRECATED: always uses MinerU
     _useBackend: boolean = true    // DEPRECATED: always uses backend
 ): Promise<DocumentStructure> {
-    // Handle Markdown files (client-side)
+    // Handle Markdown files — route through backend so skeleton is stored in DB
     if (file.name.endsWith('.md') || file.type === 'text/markdown') {
-        if (progressCallback) progressCallback(1, 1);
-        return extractMarkdown(file);
+        const { parseMarkdown } = await import('./apiClient');
+        if (progressCallback) progressCallback(0, 1);
+
+        try {
+            const result = await parseMarkdown(file);
+            if (!result.success || !result.document) {
+                throw new Error(result.error || 'Markdown parsing failed');
+            }
+            if (progressCallback) progressCallback(1, 1);
+            return {
+                text: result.document.text,
+                pages: result.document.pages,
+                wordCount: result.document.word_count,
+                language: result.document.language,
+                backendDocId: result.doc_id ?? undefined,
+            };
+        } catch (error) {
+            // Fallback: parse client-side (no skeleton stored)
+            console.warn('[Parser] Backend markdown parsing failed, falling back to client-side:', error);
+            if (progressCallback) progressCallback(1, 1);
+            return extractMarkdown(file);
+        }
     }
 
     // Handle PDF files via backend MinerU API
@@ -273,7 +293,8 @@ export async function extractStructuredContent(
                 text: result.document.text,
                 pages: result.document.pages,
                 wordCount: result.document.word_count,
-                language: result.document.language
+                language: result.document.language,
+                backendDocId: result.doc_id ?? undefined,
             };
         } catch (error) {
             console.error('[Parser] Backend API error:', error);

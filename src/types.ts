@@ -74,6 +74,8 @@ export interface DocumentStructure {
     pages: number;
     wordCount: number;
     language: 'en' | 'zh' | 'unknown';
+    /** Backend DB document ID — present when parsed via the backend API. Used for Markdown export. */
+    backendDocId?: number;
 }
 
 export interface TranslationProgress {

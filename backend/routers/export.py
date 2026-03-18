@@ -1,13 +1,15 @@
 """
-Export Router - PDF and other export format endpoints.
+Export Router - PDF and Markdown export endpoints.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import List, Optional, Literal
 
 from services.pdf_export import generate_translation_pdf
+from services.markdown_handler import reconstruct_from_skeleton
+from services.database import get_database
 
 router = APIRouter()
 
@@ -95,3 +97,88 @@ async def test_pdf():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Test PDF failed: {str(e)}")
+
+
+# ==================== Markdown Export (Skeleton & State) ====================
+
+@router.get("/markdown/{document_id}")
+async def export_markdown(
+    document_id: int,
+    include_untranslated: bool = Query(
+        default=True,
+        description="If True, unapproved chunks fall back to original English. "
+                    "If False, unapproved chunks are left as [CHUNK_XXX] placeholder tags."
+    )
+):
+    """
+    Export the final translated Markdown document.
+
+    Uses the Skeleton + State pattern:
+    1. Fetches the Markdown skeleton (stored at parse time).
+    2. Fetches all approved/completed nodes (chunk_tag -> translation).
+    3. Performs a deterministic string replacement of each [CHUNK_XXX] tag.
+    4. Returns a downloadable .md file.
+
+    Unapproved nodes are handled according to include_untranslated:
+    - True  (default): substitute original English — document is always complete.
+    - False:           leave [CHUNK_XXX] tags in place for inspection.
+    """
+    db = get_database()
+
+    # 1. Fetch skeleton
+    skeleton = db.get_skeleton(document_id)
+    if skeleton is None:
+        # Might be a legacy document without a skeleton
+        doc = db.get_document(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Document {document_id} has no Markdown skeleton. "
+                "It was uploaded before the Skeleton & State feature was enabled. "
+                "Please re-upload the document to use this export."
+            )
+        )
+
+    # 2. Fetch nodes — include_pending=True so we can fall back to English
+    nodes = db.get_nodes_with_tags(document_id, include_pending=True)
+
+    # 3. Build the substitution dictionary
+    translations: dict[str, str] = {}
+    for node in nodes:
+        tag = node["chunk_tag"]
+        if not tag:
+            continue
+        state = node.get("state", "")
+        is_approved = state in ("approved", "completed")
+
+        if is_approved and node.get("translation"):
+            translations[tag] = node["translation"]
+        elif include_untranslated:
+            # Graceful fallback: restore original English
+            translations[tag] = node["content"]
+        # else: leave [CHUNK_XXX] in skeleton as-is
+
+    # 4. Deterministic reconstruction
+    final_markdown = reconstruct_from_skeleton(skeleton, translations)
+
+    # 5. Return as downloadable file
+    doc_info = db.get_document(document_id)
+    doc_name = doc_info["name"] if doc_info else f"document_{document_id}"
+    # Strip extension if present, add _translated.md
+    base_name = doc_name.rsplit(".", 1)[0] if "." in doc_name else doc_name
+    filename = f"{base_name}_translated.md"
+
+    print(f"[Markdown Export] doc_id={document_id}, nodes={len(nodes)}, "
+          f"approved={sum(1 for n in nodes if n.get('state') in ('approved','completed'))}, "
+          f"skeleton_len={len(skeleton)}, output_len={len(final_markdown)}")
+
+    return Response(
+        content=final_markdown.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(final_markdown.encode("utf-8")))
+        }
+    )

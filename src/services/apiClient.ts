@@ -93,6 +93,8 @@ export interface DocumentStructure {
 export interface ParseResult {
     success: boolean;
     document?: DocumentStructure;
+    /** Backend DB ID of the created document — used for Markdown export. */
+    doc_id?: number;
     error?: string;
 }
 
@@ -378,6 +380,26 @@ export async function exportPdf(request: ExportPdfRequest): Promise<Blob> {
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`PDF Export Error (${response.status}): ${errorText}`);
+    }
+
+    return response.blob();
+}
+
+/**
+ * Export translation back to Markdown using the Skeleton+State pattern.
+ * Performs a deterministic tag replacement on the stored skeleton.
+ * Returns a Blob that can be downloaded as a .md file.
+ */
+export async function exportMarkdown(
+    documentId: number,
+    includeUntranslated: boolean = true
+): Promise<Blob> {
+    const url = `${API_BASE}/api/export/markdown/${documentId}?include_untranslated=${includeUntranslated}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Markdown Export Error (${response.status}): ${errorText}`);
     }
 
     return response.blob();

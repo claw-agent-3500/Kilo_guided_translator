@@ -9,6 +9,12 @@ Approach:
 5. Render back to markdown
 
 This GUARANTEES structure preservation - Gemini never sees formatting!
+
+Skeleton & State (Chunk Tagging):
+- build_skeleton_and_dict() decouples Markdown syntax from translatable text.
+- The skeleton stores [CHUNK_001] tags in place of text.
+- The chunk_dict maps tag -> original English text.
+- Export is a deterministic string replacement: no AST needed at export time.
 """
 
 import re
@@ -91,6 +97,9 @@ class MarkdownHandler:
     STANDARD_CODE_PATTERN = re.compile(r'\b(EN|ISO|IEC|DIN|ASTM|GB|JIS)\s*\d+[-\d.:]*\b')
     FORMULA_PATTERN = re.compile(r'\$[^$]+\$|\$\$[^$]+\$\$')
     URL_PATTERN = re.compile(r'https?://[^\s\)]+')
+    # A line that is entirely a Markdown image (possibly with surrounding whitespace).
+    # These are kept verbatim in the skeleton and never sent to Gemini / review queue.
+    IMAGE_LINE_PATTERN = re.compile(r'^\s*!\[.*?\]\(.*?\)\s*$')
     
     def __init__(self):
         self.node_id = 0
@@ -222,6 +231,18 @@ class MarkdownHandler:
                 i += 1
                 continue
             
+            # Standalone image line — keep verbatim, do NOT translate
+            if self.IMAGE_LINE_PATTERN.match(line):
+                ast.nodes.append(TextNode(
+                    id=self._next_id(),
+                    text=line,
+                    node_type=NodeType.PARAGRAPH,
+                    suffix='\n',
+                    translatable=False
+                ))
+                i += 1
+                continue
+
             # Regular paragraph
             ast.nodes.append(TextNode(
                 id=self._next_id(),
@@ -236,8 +257,9 @@ class MarkdownHandler:
     
     def _parse_table_row(self, ast: MarkdownAST, line: str):
         """Parse a table row, preserving cell structure."""
-        # Check if it's a separator row (|---|---|)
-        if re.match(r'^\s*\|[\s:-]+\|[\s:-|]*$', line):
+        # Check if it's a separator row (|---|---|  or  |:---|:---:|---:|)
+        # Use [-\s:] so "-" is treated as a literal, not a range operator
+        if re.match(r'^\s*\|[-\s:|]+\|[-\s:|]*$', line):
             ast.nodes.append(TextNode(
                 id=self._next_id(),
                 text=line,
@@ -432,3 +454,80 @@ def apply_and_render(
     handler = MarkdownHandler()
     handler.apply_translations(ast, translations, protected_map)
     return ast.render()
+
+
+# ============================================================
+# Skeleton & State (Chunk Tagging) — Primary Export Path
+# ============================================================
+
+def build_skeleton_and_dict(
+    markdown: str
+) -> Tuple[str, Dict[str, str]]:
+    """
+    Parse markdown and produce two decoupled objects:
+
+    skeleton   — Full markdown with translatable text replaced by [CHUNK_001] tags.
+                 All structural syntax (|, #, >, -, **, $...$) is preserved exactly.
+
+    chunk_dict — {"CHUNK_001": "Original English text", ...}
+                 Contains only the plain translatable text, indexed by tag.
+                 Inline elements (formulas, URLs, inline code) are stored as
+                 protected placeholders inside chunk_dict values so they survive
+                 translation and are restored at export time.
+
+    Usage:
+        skeleton, chunk_dict = build_skeleton_and_dict(markdown_text)
+        # Store skeleton in DB once — never touch it again.
+        # Feed chunk_dict values to Gemini for translation.
+        # At export: for tag, translation in finalized_dict.items():
+        #                skeleton = skeleton.replace(f"[{tag}]", translation)
+    """
+    handler = MarkdownHandler()
+    ast = handler.parse(markdown)
+
+    chunk_dict: dict[str, str] = {}
+    tag_counter = 0
+
+    for node in ast.nodes:
+        if not node.translatable or not node.text.strip():
+            continue
+
+        tag_counter += 1
+        tag = f"CHUNK_{tag_counter:03d}"
+
+        # Protect inline elements within this node's text so the LLM never
+        # sees formulas, URLs, or inline code — they round-trip perfectly.
+        processed_text, _protected = handler._protect_inline_elements(node.text)
+
+        # Store the (lightly processed) original English in the dict.
+        chunk_dict[tag] = processed_text
+
+        # Replace the node's text with the bracketed tag so render() produces the skeleton.
+        # e.g. "Determine the shear force." → "[CHUNK_001]"
+        node.text = f"[{tag}]"
+
+    skeleton = ast.render()
+    return skeleton, chunk_dict
+
+
+def reconstruct_from_skeleton(
+    skeleton: str,
+    translations: Dict[str, str]
+) -> str:
+    """
+    Deterministic export: replace each [CHUNK_XXX] tag in the skeleton with
+    the corresponding translated (or original) text.
+
+    Args:
+        skeleton:     The tagged Markdown string produced by build_skeleton_and_dict().
+        translations: {"CHUNK_001": "确定剪力。", ...}
+                      Only approved/finalized entries need be present.
+                      Any unreplaced tags remain as-is (graceful fallback).
+
+    Returns:
+        Final translated Markdown string with full structural fidelity.
+    """
+    result = skeleton
+    for tag, translated_text in translations.items():
+        result = result.replace(f"[{tag}]", translated_text)
+    return result

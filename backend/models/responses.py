@@ -52,4 +52,9 @@ class ParseResult(BaseModel):
     """Result of document parsing."""
     success: bool
     document: Optional[DocumentStructure] = None
+    doc_id: Optional[int] = Field(
+        default=None,
+        description="Backend database ID of the created document. "
+                    "Used to request the Skeleton+State Markdown export."
+    )
     error: Optional[str] = None

@@ -5,8 +5,36 @@ Document Parsing Router - PDF and Markdown parsing endpoints.
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from models.responses import ParseResult, DocumentStructure
 from services.mineru_service import extract_with_mineru, is_mineru_configured
+from services.markdown_handler import build_skeleton_and_dict
+from services.database import get_database
 
 router = APIRouter()
+
+
+def _ingest_document_skeleton(doc_id: int, markdown_text: str) -> int:
+    """
+    After a document is created in the DB, build its skeleton and store it.
+    Creates one node per translatable chunk, with chunk_tag populated.
+
+    Returns the number of nodes created.
+    """
+    db = get_database()
+    skeleton, chunk_dict = build_skeleton_and_dict(markdown_text)
+
+    # Persist skeleton
+    db.save_skeleton(doc_id, skeleton)
+
+    # Create nodes from the chunk dict (preserves order via dict insertion order, Python 3.7+)
+    blocks = [
+        {
+            "content": original_text,
+            "chunk_tag": tag,
+            "type": "paragraph"   # block_type; refined later if needed
+        }
+        for tag, original_text in chunk_dict.items()
+    ]
+    db.create_nodes_batch(doc_id, blocks)
+    return len(blocks)
 
 
 @router.post("/pdf", response_model=ParseResult)
@@ -63,8 +91,20 @@ async def parse_pdf(
                 status_code=501, 
                 detail="Legacy PDF parsing not yet implemented. Please enable MinerU."
             )
-        
-        return ParseResult(success=True, document=document)
+
+        # --- Skeleton & State: persist to DB ---
+        db = get_database()
+        doc_id = db.create_document(
+            name=file.filename,
+            source_text=document.text,
+            pages=document.pages,
+            word_count=document.word_count,
+            language=document.language,
+        )
+        node_count = _ingest_document_skeleton(doc_id, document.text)
+        print(f"[Parse] Skeleton stored: doc_id={doc_id}, nodes={node_count}")
+
+        return ParseResult(success=True, document=document, doc_id=doc_id)
     
     except HTTPException:
         raise
@@ -120,8 +160,20 @@ async def parse_markdown(file: UploadFile = File(...)):
             word_count=word_count,
             language=language
         )
-        
-        return ParseResult(success=True, document=document)
+
+        # --- Skeleton & State: persist to DB ---
+        db = get_database()
+        doc_id = db.create_document(
+            name=file.filename,
+            source_text=text,
+            pages=document.pages,
+            word_count=word_count,
+            language=language,
+        )
+        node_count = _ingest_document_skeleton(doc_id, text)
+        print(f"[Parse] Markdown skeleton stored: doc_id={doc_id}, nodes={node_count}")
+
+        return ParseResult(success=True, document=document, doc_id=doc_id)
     
     except Exception as e:
         return ParseResult(success=False, error=str(e))
