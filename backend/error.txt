@@ -1,0 +1,21 @@
+D:\myproject\kiloclaw\Guided-Translator\backend\services\gemini_service.py:5: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from services.gemini_service import translate_chunk
+  File "D:\myproject\kiloclaw\Guided-Translator\backend\services\__init__.py", line 5, in <module>
+    from . import gemini_service, mineru_service, chunk_manager
+  File "D:\myproject\kiloclaw\Guided-Translator\backend\services\gemini_service.py", line 12, in <module>
+    from routers.keys import get_current_gemini_key, rotate_gemini_key
+  File "D:\myproject\kiloclaw\Guided-Translator\backend\routers\__init__.py", line 5, in <module>
+    from . import parse, translate, keys
+  File "D:\myproject\kiloclaw\Guided-Translator\backend\routers\translate.py", line 13, in <module>
+    from services.gemini_service import translate_chunk
+ImportError: cannot import name 'translate_chunk' from partially initialized module 'services.gemini_service' (most likely due to a circular import) (D:\myproject\kiloclaw\Guided-Translator\backend\services\gemini_service.py)

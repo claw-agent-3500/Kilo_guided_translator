@@ -141,11 +141,12 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
         });
     };
 
-    // Detect whether text is an HTML table chunk from MinerU
-    const isHtmlTable = (text: string) => /<table[\s>]/i.test(text);
+    // Detect whether text is an HTML table chunk (including orphaned rows/cells)
+    const isHtmlTable = (text: string) => /<table[\s>]|<tr[\s>]|<td[\s>]/i.test(text);
 
-    // Inject scoped table styles into the HTML string
-    const styledTableHtml = (html: string) => `
+    // Inject scoped table styles and ensure <table> wrapper exists
+    const styledTableHtml = (html: string) => {
+        const style = `
         <style>
             .rq-table { border-collapse: collapse; width: 100%; font-size: 14px; }
             .rq-table td, .rq-table th {
@@ -163,8 +164,18 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
                 color: #0369a1;
             }
         </style>
-        ${html.replace(/<table/gi, '<table class="rq-table"')}
-    `;
+        `;
+        
+        // If the LLM stripped the <table tags, we must wrap it to force layout
+        let finalizedHtml = html;
+        if (!/<table/i.test(html) && /<tr|<td/i.test(html)) {
+            finalizedHtml = `<table class="rq-table">${html}</table>`;
+        } else {
+            finalizedHtml = html.replace(/<table/gi, '<table class="rq-table"');
+        }
+
+        return style + finalizedHtml;
+    };
 
     // Render a chunk — HTML table or plain text
     const renderContent = (text: string | null | undefined, fallback: string = 'No content', isOriginal: boolean = false) => {

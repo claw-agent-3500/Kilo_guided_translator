@@ -7,9 +7,11 @@ Provides:
 - Progress tracking
 - Granular retry for failed batches
 - Persistent state (in-memory, can be extended to SQLite)
+- Smart context-batching for TOC runs and dashed-list runs
 """
 
 import asyncio
+import re
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -80,15 +82,79 @@ class TranslationJob:
         }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Chunk-type detection for smart context-batching
+# ─────────────────────────────────────────────────────────────────────────────
+
+# TOC entry: "3.1 Some heading text . . . 71" or "10.8.4 Something 72"
+_TOC_PATTERN = re.compile(
+    r'^[\d]+[\d.]*\s+.{2,60}\s*\.{2,}\s*\d+\s*$'   # trailing dots + page
+    r'|^[\d]+[\d.]*\s+.{2,60}\s+\d+\s*$',          # just trailing page number
+    re.UNICODE
+)
+
+# List continuation: starts with – or - or * bullet (not a markdown "- " list marker,
+# which the parser already handles — these are typographic dashes from MinerU)
+_DASH_PATTERN = re.compile(r'^\s*[–—-]\s+\S')
+
+TOC_BATCH_MAX = 10   # group up to 10 TOC entries per Gemini call
+LIST_BATCH_MAX = 8   # group up to 8 dashed-list items per Gemini call
+
+
+def _chunk_kind(content: str) -> str:
+    """Return 'toc', 'dashlist', or 'normal'."""
+    stripped = content.strip()
+    if _TOC_PATTERN.match(stripped):
+        return 'toc'
+    if _DASH_PATTERN.match(stripped):
+        return 'dashlist'
+    return 'normal'
+
+
+def _group_chunks_smart(chunks: List[Chunk]) -> List[List[Chunk]]:
+    """
+    Group consecutive chunks of the same run type into sub-batches.
+
+    - TOC entries     → groups of up to TOC_BATCH_MAX
+    - Dashed-list items → groups of up to LIST_BATCH_MAX
+    - Everything else  → individual (group of 1)
+
+    Each returned group is translated as a single Gemini call.
+    """
+    if not chunks:
+        return []
+
+    groups: List[List[Chunk]] = []
+    current_group: List[Chunk] = [chunks[0]]
+    current_kind = _chunk_kind(chunks[0].content)
+    current_max = {"toc": TOC_BATCH_MAX, "dashlist": LIST_BATCH_MAX}.get(current_kind, 1)
+
+    for chunk in chunks[1:]:
+        kind = _chunk_kind(chunk.content)
+        max_size = {"toc": TOC_BATCH_MAX, "dashlist": LIST_BATCH_MAX}.get(kind, 1)
+
+        if kind == current_kind and kind != 'normal' and len(current_group) < current_max:
+            current_group.append(chunk)
+        else:
+            groups.append(current_group)
+            current_group = [chunk]
+            current_kind = kind
+            current_max = max_size
+
+    groups.append(current_group)
+    return groups
+
+
 class TranslationQueue:
     """
     Manages translation jobs asynchronously.
-    
+
     Features:
     - Queue multiple jobs
     - Process batches with rate limit awareness
     - Retry failed batches automatically
     - Provide progress updates via callbacks
+    - Smart context-batching for TOC / dashed-list runs
     """
     
     def __init__(self):
@@ -217,7 +283,7 @@ class TranslationQueue:
     
     async def _worker(self):
         """Background worker that processes jobs."""
-        from services.gemini_service import translate_chunk
+        from services.gemini_service import translate_chunk, translate_chunks_batch
         
         while self._running:
             try:
@@ -243,7 +309,7 @@ class TranslationQueue:
                     if batch.state == BatchState.COMPLETED:
                         continue  # Skip already completed batches
                     
-                    await self._process_batch(job, batch, translate_chunk)
+                    await self._process_batch(job, batch, translate_chunk, translate_chunks_batch)
                 
                 # Check if all batches completed
                 all_completed = all(
@@ -276,20 +342,45 @@ class TranslationQueue:
         self,
         job: TranslationJob,
         batch: TranslationBatch,
-        translate_fn: Callable
+        translate_fn: Callable,
+        batch_translate_fn: Callable,
     ):
-        """Process a single batch of chunks."""
+        """
+        Process a single batch of chunks using smart context-batching.
+
+        Consecutive TOC entries and dashed-list items are grouped into a single
+        Gemini call via batch_translate_fn.  All other chunks are translated
+        individually via translate_fn.  The skeleton and MD structure are
+        completely unaffected because each chunk_id still maps to its own
+        translation; we only change how many chunks go per API call.
+        """
         batch.state = BatchState.TRANSLATING
         
         try:
-            for chunk in batch.chunks:
-                result = await translate_fn(chunk, job.glossary)
-                batch.results.append(result)
-                
-                # Notify progress
+            # Group chunks into smart sub-batches based on content type.
+            sub_batches = _group_chunks_smart(batch.chunks)
+            self.log(
+                f"Batch {batch.id}: {len(batch.chunks)} chunks → "
+                f"{len(sub_batches)} API calls (smart grouping)"
+            )
+
+            for sub in sub_batches:
+                if len(sub) == 1:
+                    # Single chunk — translate individually
+                    result = await translate_fn(sub[0], job.glossary)
+                    batch.results.append(result)
+                else:
+                    # Multi-chunk run (TOC / dashed-list) — one API call
+                    results = await batch_translate_fn(sub, job.glossary)
+                    batch.results.extend(results)
+
+                # Notify progress after each sub-batch
                 if job.id in self._progress_callbacks:
                     callback = self._progress_callbacks[job.id]
                     callback(job.progress)
+
+                # Small pacing delay between API calls
+                await asyncio.sleep(0.3)
             
             batch.state = BatchState.COMPLETED
             self.log(f"Batch {batch.id} completed")

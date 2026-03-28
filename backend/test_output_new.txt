@@ -1,0 +1,16 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.1, pytest-9.0.2, pluggy-1.6.0 -- D:\myproject\kiloclaw\Guided-Translator\backend\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\myproject\kiloclaw\Guided-Translator\backend
+plugins: anyio-4.13.0
+collecting ... collected 7 items
+
+test_skeleton.py::test_table_roundtrip PASSED                            [ 14%]
+test_skeleton.py::test_latex_formula_preservation PASSED                 [ 28%]
+test_skeleton.py::test_blockquote_with_bold PASSED                       [ 42%]
+test_skeleton.py::test_nested_list PASSED                                [ 57%]
+test_skeleton.py::test_unapproved_nodes_fallback PASSED                  [ 71%]
+test_skeleton.py::test_empty_and_separators_not_tagged PASSED            [ 85%]
+test_skeleton.py::test_header_prefix_preserved PASSED                    [100%]
+
+============================== 7 passed in 0.10s ==============================

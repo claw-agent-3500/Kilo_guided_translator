@@ -240,60 +240,68 @@ def convert_html_tables_to_markdown(content: str) -> str:
     """
     Convert HTML <table> elements to Markdown table format.
     MinerU sometimes outputs tables as HTML which is harder to translate.
+    Also unescapes all HTML entities (e.g. &lt; → <, &amp; → &) in the
+    full output so they never leak into chunk text.
     """
     import re
-    
+    import html as html_lib
+
     def html_table_to_markdown(match: re.Match) -> str:
         """Convert a single HTML table to Markdown."""
         table_html = match.group(0)
-        
+
         # Extract all rows
         rows = re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, re.DOTALL | re.IGNORECASE)
         if not rows:
             return table_html  # Return original if can't parse
-        
+
         markdown_rows = []
-        
+
         for row_idx, row in enumerate(rows):
             # Extract cells (both <td> and <th>)
             cells = re.findall(r'<t[hd][^>]*>(.*?)</t[hd]>', row, re.DOTALL | re.IGNORECASE)
-            
-            # Clean cell content (remove HTML tags, normalize whitespace)
+
+            # Clean cell content (remove HTML tags, decode entities, normalize whitespace)
             cleaned_cells = []
             for cell in cells:
                 # Remove nested HTML tags
                 clean = re.sub(r'<[^>]+>', '', cell)
+                # Decode HTML entities (&lt; → <, &amp; → &, &le; → ≤, etc.)
+                clean = html_lib.unescape(clean)
                 # Normalize whitespace
                 clean = ' '.join(clean.split())
-                # Escape pipe characters
+                # Escape pipe characters for Markdown table syntax
                 clean = clean.replace('|', '\\|')
                 cleaned_cells.append(clean)
-            
+
             if cleaned_cells:
                 # Build markdown row
                 md_row = '| ' + ' | '.join(cleaned_cells) + ' |'
                 markdown_rows.append(md_row)
-                
+
                 # Add separator after first row (header)
                 if row_idx == 0:
                     separator = '|' + '|'.join(['---' for _ in cleaned_cells]) + '|'
                     markdown_rows.append(separator)
-        
+
         if markdown_rows:
             return '\n'.join(markdown_rows)
         return table_html  # Return original if conversion failed
-    
+
     # Find and replace all HTML tables
-    # Pattern matches <table>...</table> including nested content
     pattern = r'<table[^>]*>.*?</table>'
     result = re.sub(pattern, html_table_to_markdown, content, flags=re.DOTALL | re.IGNORECASE)
-    
+
     # Count conversions for logging
     original_count = len(re.findall(r'<table', content, re.IGNORECASE))
     remaining_count = len(re.findall(r'<table', result, re.IGNORECASE))
     if original_count > 0:
         log(f"Converted {original_count - remaining_count}/{original_count} HTML tables to Markdown")
-    
+
+    # Unescape any residual HTML entities in non-table text that MinerU may
+    # have encoded (e.g. bare &lt; in paragraph text, &amp; in formulae, etc.)
+    result = html_lib.unescape(result)
+
     return result
 
 

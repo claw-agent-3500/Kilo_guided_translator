@@ -316,3 +316,149 @@ async def translate_batch(
             ))
     
     return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Context-batch translator (Fix 3 & 4)
+# Sends multiple related chunks as ONE Gemini call for better context and
+# fewer API round-trips.  The skeleton / MD structure is NOT affected because
+# each chunk still maps to its own skeleton tag and gets its own translation.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SPLIT_MARKER = "<<<SPLIT>>>"
+
+
+def _batch_system_instruction(relevant_terms: list[GlossaryEntry]) -> str:
+    """System instruction for batched multi-chunk translation."""
+    glossary_section = ""
+    if relevant_terms:
+        terms_list = "\n".join([f"  - {t.english} → {t.chinese}" for t in relevant_terms])
+        glossary_section = f"\n\nMANDATORY TERMINOLOGY (use these exact translations):\n{terms_list}"
+
+    return f"""You are a technical translator (English → Simplified Chinese).
+
+You will receive multiple text segments separated by the marker: {_SPLIT_MARKER}
+
+RULES:
+1. Translate EACH segment individually into Chinese.
+2. Return the translations in the SAME ORDER, separated by the EXACT SAME marker: {_SPLIT_MARKER}
+3. You MUST produce exactly the same number of {_SPLIT_MARKER} separators as in the input.
+4. Do NOT merge or reorder segments.
+5. Preserve all numbers, standard codes (EN, ISO, IEC …), punctuation, and dots (…) exactly.
+6. Do NOT add commentary, notes, or extra text outside the translated segments.{glossary_section}"""
+
+
+async def translate_chunks_batch(
+    chunks: list[Chunk],
+    glossary: list[GlossaryEntry],
+    max_retries: int = 5,
+) -> list[TranslatedChunk]:
+    """
+    Translate a list of related chunks as a single Gemini API call.
+
+    Chunks are joined with _SPLIT_MARKER, translated, then split back.
+    If Gemini returns the wrong number of segments (split count mismatch),
+    falls back to translating each chunk individually.
+
+    Use this for:
+    - TOC runs (10.8 Emergency … 71  /  10.8.1 Location … 71  / …)
+    - Dashed-list runs (– deletion of …  /  – modification of …)
+
+    The skeleton and MD output are completely unaffected.
+    """
+    if not chunks:
+        return []
+    if len(chunks) == 1:
+        return [await translate_chunk(chunks[0], glossary, max_retries=max_retries)]
+
+    all_terms = []
+    for chunk in chunks:
+        all_terms.extend(find_relevant_terms(chunk.content, glossary))
+    # Deduplicate terms by english key
+    seen = set()
+    unique_terms = []
+    for t in all_terms:
+        if t.english not in seen:
+            seen.add(t.english)
+            unique_terms.append(t)
+
+    joined_input = f"\n{_SPLIT_MARKER}\n".join(c.content for c in chunks)
+    system_instruction = _batch_system_instruction(unique_terms)
+    user_prompt = f"Translate each segment:\n\n{joined_input}"
+
+    api_key = get_current_gemini_key()
+    if not api_key:
+        raise Exception("No Gemini API key configured")
+
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(
+                "gemini-2.0-flash",
+                system_instruction=system_instruction
+            )
+
+            log(f"Batch translate attempt {attempt + 1}: {len(chunks)} chunks")
+            response = model.generate_content(
+                user_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    max_output_tokens=8192,
+                )
+            )
+
+            raw = clean_response(response.text)
+            parts = raw.split(_SPLIT_MARKER)
+
+            # Strip whitespace from each part
+            parts = [p.strip() for p in parts]
+
+            if len(parts) != len(chunks):
+                log(
+                    f"Batch split mismatch: expected {len(chunks)} parts, "
+                    f"got {len(parts)}. Falling back to individual translation."
+                )
+                # Fallback: translate individually
+                results = []
+                for chunk in chunks:
+                    results.append(await translate_chunk(chunk, glossary, max_retries=max_retries))
+                    await asyncio.sleep(0.3)
+                return results
+
+            results = []
+            for chunk, translated_text in zip(chunks, parts):
+                terms_used = identify_terms_in_text(translated_text, unique_terms)
+                results.append(TranslatedChunk(
+                    id=chunk.id,
+                    original=chunk.content,
+                    translated=translated_text,
+                    terms_used=terms_used,
+                    tokens_used=None,
+                ))
+            log(f"Batch translate succeeded: {len(chunks)} chunks in 1 call")
+            return results
+
+        except Exception as e:
+            last_error = e
+            error_msg = str(e).lower()
+            log(f"Batch translate error (attempt {attempt + 1}): {e}")
+
+            is_rate_limit = any(x in error_msg for x in ["429", "rate", "quota", "resource_exhausted"])
+            if is_rate_limit:
+                delay = calculate_backoff(attempt)
+                log(f"Rate limited, backing off {delay:.1f}s")
+                await asyncio.sleep(delay)
+                if rotate_gemini_key():
+                    api_key = get_current_gemini_key()
+                continue
+
+            is_retryable = any(x in error_msg for x in ["timeout", "connection", "unavailable", "500", "502", "503"])
+            if is_retryable and attempt < max_retries - 1:
+                await asyncio.sleep(calculate_backoff(attempt, base_delay=0.5))
+                continue
+
+            break
+
+    raise Exception(f"Batch translation failed after {max_retries} attempts: {last_error}")
+

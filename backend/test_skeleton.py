@@ -229,6 +229,77 @@ def test_header_prefix_preserved():
          "## " in result and "安全要求" in result)
 
 
+def test_blank_line_paragraph_merge():
+    """Paragraphs separated by a single blank line should merge when the first
+    line does NOT end with sentence-terminal punctuation (continuation clue)."""
+    md = "The equipment shall be designed\n\nto withstand all forces\n\nthat arise during operation.\n"
+    skeleton, chunk_dict = build_skeleton_and_dict(md)
+
+    # "The equipment shall be designed" does NOT end with [.?!]
+    # "to withstand all forces" does NOT end with [.?!]
+    # → all three should merge into 1 chunk.
+    assert len(chunk_dict) == 1, (
+        f"Expected 1 merged chunk, got {len(chunk_dict)}: {list(chunk_dict.values())}"
+    )
+
+    # The merged text should contain all three parts
+    merged = list(chunk_dict.values())[0]
+    assert "designed" in merged and "forces" in merged and "operation" in merged, (
+        f"Merged text incomplete: {merged}"
+    )
+
+    check_step("Blank-line merge: 3 lines → 1 chunk", len(chunk_dict) == 1)
+    check_step("Blank-line merge: all text present",
+         "designed" in merged and "operation" in merged)
+
+
+def test_sentence_terminal_not_merged():
+    """Paragraphs ending with a sentence-terminal character (.?!) must NOT
+    be merged through blank lines — they are complete thoughts."""
+    md = "This is a brilliantly crafted and complete sentence.\n\nThis is another wonderfully articulated and complete sentence.\n"
+    skeleton, chunk_dict = build_skeleton_and_dict(md)
+
+    # Both lines end with '.', so they must remain separate chunks.
+    assert len(chunk_dict) == 2, (
+        f"Expected 2 separate chunks, got {len(chunk_dict)}: {list(chunk_dict.values())}"
+    )
+
+    check_step("Sentence-terminal: 2 sentences stay as 2 chunks", len(chunk_dict) == 2)
+
+
+def test_toc_list_consolidation():
+    """Short adjacent LIST_ITEMs should be grouped into a single chunk."""
+    md = (
+        "- 3.1 Scope\n"
+        "- 3.2 Terms\n"
+        "- 3.3 Safety\n"
+        "- 3.4 Design\n"
+    )
+    skeleton, chunk_dict = build_skeleton_and_dict(md)
+
+    # Each line is 2–3 words → all are below MIN_LIST_WORDS (6)
+    # and share the same indent level (0).  They should be grouped.
+    values = list(chunk_dict.values())
+    assert len(chunk_dict) <= 2, (
+        f"Expected ≤2 grouped chunks for 4 short list items, got {len(chunk_dict)}: {values}"
+    )
+
+    # The grouped chunk text should contain the ' | ' separator
+    combined = ' '.join(values)
+    assert '|' in combined, f"Expected ' | ' separator in grouped chunk: {combined}"
+
+    # All original text should be present
+    for item in ['Scope', 'Terms', 'Safety', 'Design']:
+        assert item in combined, f"'{item}' missing from grouped chunk: {combined}"
+
+    # Round-trip: skeleton must still have list markers
+    assert skeleton.count('- ') >= 4, "List markers lost from skeleton"
+
+    check_step("TOC list: 4 short items grouped into ≤2 chunks", len(chunk_dict) <= 2)
+    check_step("TOC list: all text present in grouped chunks",
+         all(w in combined for w in ['Scope', 'Terms', 'Safety', 'Design']))
+
+
 # ---- Runner ----
 
 def run_all():
@@ -244,6 +315,9 @@ def run_all():
         ("Unapproved Nodes Fallback",     test_unapproved_nodes_fallback),
         ("Empty/Separator Not Tagged",    test_empty_and_separators_not_tagged),
         ("Header Prefix Preserved",       test_header_prefix_preserved),
+        ("Blank-Line Paragraph Merge",    test_blank_line_paragraph_merge),
+        ("Sentence-Terminal Not Merged",  test_sentence_terminal_not_merged),
+        ("TOC List Consolidation",        test_toc_list_consolidation),
     ]
 
     passed_total = 0
