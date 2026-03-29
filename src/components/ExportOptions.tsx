@@ -1,6 +1,7 @@
 // Export Options Component
+import { logger } from '../services/logger';
 import { useState } from 'react';
-import { Download, FileText, File, Loader2, Sparkles, FileDown } from 'lucide-react';
+import { Download, FileText, File, Loader2, Sparkles, FileDown, Copy, Check } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import type { TranslatedChunk } from '../types';
 import { reassembleChunks } from '../services/chunkManager';
@@ -18,6 +19,25 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
     const [isExporting, setIsExporting] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
     const [showSmartPdfModal, setShowSmartPdfModal] = useState(false);
+    const [copiedField, setCopiedField] = useState<string | null>(null);
+
+    const handleCopyToClipboard = async (content: string, field: string) => {
+        try {
+            await navigator.clipboard.writeText(content);
+            setCopiedField(field);
+            setTimeout(() => setCopiedField(null), 2000);
+        } catch {
+            // Fallback
+            const ta = document.createElement('textarea');
+            ta.value = content;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            setCopiedField(field);
+            setTimeout(() => setCopiedField(null), 2000);
+        }
+    };
 
     const handleExportPDF = async () => {
         setIsExporting(true);
@@ -38,7 +58,7 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
                 position: chunk.position ?? index,
             }));
 
-            console.log('[PDF Export] Sending', exportChunks.length, 'chunks to backend...');
+            logger.debug('PDF Export] Sending', exportChunks.length, 'chunks to backend...');
             setExportProgress(40);
 
             // Call backend to generate PDF
@@ -54,7 +74,7 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
             const filename = `translation_${Date.now()}.pdf`;
             saveAs(pdfBlob, filename);
 
-            console.log('✅ Text-based PDF downloaded:', filename);
+            logger.log('✅ Text-based PDF downloaded:', filename);
             setExportProgress(100);
 
         } catch (error) {
@@ -67,7 +87,7 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
     };
 
     const handleExportText = (format: 'translation' | 'bilingual') => {
-        console.log('🔍 Export initiated - Format:', format);
+        logger.log('🔍 Export initiated - Format:', format);
 
         let content = '';
         let filename = '';
@@ -88,7 +108,7 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
 
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         saveAs(blob, filename);
-        console.log('✅ Download triggered:', filename);
+        logger.log('✅ Download triggered:', filename);
     };
 
     const handleExportOriginalMD = () => {
@@ -100,7 +120,7 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
         const blob = new Blob([originalMd], { type: 'text/markdown;charset=utf-8' });
         const filename = `original_mineru_${Date.now()}.md`;
         saveAs(blob, filename);
-        console.log('✅ Original MinerU MD downloaded:', filename);
+        logger.log('✅ Original MinerU MD downloaded:', filename);
     };
 
     const handleExportNewTerms = () => {
@@ -133,7 +153,7 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
         const filename = `new_terms_${Date.now()}.csv`;
         saveAs(blob, filename);
-        console.log('✅ CSV download triggered:', filename);
+        logger.log('✅ CSV download triggered:', filename);
     };
 
     return (
@@ -143,7 +163,24 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
                 Export Options
             </h2>
 
-            <div className="grid md:grid-cols-2 gap-4">
+            {/* Copy Translation to Clipboard */}
+            <button
+                onClick={() => {
+                    const content = translatedChunks.map(c => c.translation).join('\n\n');
+                    handleCopyToClipboard(content, 'translation');
+                }}
+                className="w-full mb-4 flex items-center justify-center gap-2 p-3 bg-slate-100 border border-slate-200 rounded-xl hover:bg-slate-200 transition-all font-medium text-sm"
+            >
+                {copiedField === 'translation' ? (
+                    <><Check className="w-4 h-4 text-emerald-600" /> Copied to Clipboard!</>
+                ) : (
+                    <><Copy className="w-4 h-4" /> Copy Translation to Clipboard</>
+                )}
+            </button>
+
+            {/* Download Options - Grouped */}
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Download Files</p>
+            <div className="grid md:grid-cols-2 gap-3 mb-4">
                 {/* PDF Export */}
                 <button
                     onClick={handleExportPDF}

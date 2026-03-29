@@ -6,6 +6,9 @@
  */
 
 // Backend base URL - changes based on environment
+// ============ Logging ============
+import { logger } from './logger';
+
 const getBackendUrl = (): string => {
     // Check if running in Tauri
     if (typeof window !== 'undefined' && '__TAURI__' in window) {
@@ -38,8 +41,27 @@ async function apiFetch<T>(
     });
 
     if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error (${response.status}): ${errorText}`);
+        let errorMessage: string;
+        try {
+            const errorData = await response.json();
+            errorMessage = errorData.detail || errorData.message || errorData.error || `HTTP ${response.status}`;
+        } catch {
+            errorMessage = await response.text() || `HTTP ${response.status}`;
+        }
+
+        const statusMessages: Record<number, string> = {
+            400: 'Invalid request. Please check your input.',
+            401: 'Authentication failed. Please check your API key.',
+            403: 'Access denied.',
+            404: 'Service endpoint not found. Is the backend running?',
+            429: 'Rate limit exceeded. Please wait and try again.',
+            500: 'Server error. Please try again later.',
+            502: 'Backend is not responding. Please check if the server is running.',
+            503: 'Service temporarily unavailable.',
+        };
+
+        const friendlyMessage = statusMessages[response.status];
+        throw new Error(friendlyMessage ? `${friendlyMessage} (${errorMessage})` : `API Error: ${errorMessage}`);
     }
 
     return response.json();
@@ -222,7 +244,7 @@ export async function translateBatchStreaming(
         throw new Error(`Translation Error (${response.status}): ${errorText}`);
     }
 
-    console.log('[SSE] Response received:', {
+    logger.debug('SSE] Response received:', {
         status: response.status,
         contentType: response.headers.get('content-type'),
         ok: response.ok
@@ -269,7 +291,7 @@ export async function translateBatchStreaming(
     // Process a list of events
     const processEvents = (events: TranslationProgress[]) => {
         for (const event of events) {
-            console.log('[SSE] Event:', event.event, event.chunk_id);
+            logger.debug('SSE] Event:', event.event, event.chunk_id);
 
             switch (event.event) {
                 case 'progress':
@@ -278,7 +300,7 @@ export async function translateBatchStreaming(
 
                 case 'chunk_complete':
                     if (event.translated_chunk) {
-                        console.log('[SSE] Chunk translated:', event.translated_chunk.id,
+                        logger.debug('SSE] Chunk translated:', event.translated_chunk.id,
                             'Length:', event.translated_chunk.translated?.length);
                         results.push(event.translated_chunk);
                         onChunkComplete?.(event.translated_chunk);
@@ -292,7 +314,7 @@ export async function translateBatchStreaming(
                     break;
 
                 case 'done':
-                    console.log('[SSE] Translation complete, total chunks:', results.length);
+                    logger.debug('SSE] Translation complete, total chunks:', results.length);
                     break;
             }
         }
@@ -315,14 +337,14 @@ export async function translateBatchStreaming(
 
     // Process any remaining events in the buffer
     if (buffer.trim()) {
-        console.log('[SSE] Processing remaining buffer...');
+        logger.debug('SSE] Processing remaining buffer...');
         const { events } = extractEvents(buffer);
         if (events.length > 0) {
             processEvents(events);
         }
     }
 
-    console.log('[SSE] Returning results:', results.length, 'chunks');
+    logger.debug('SSE] Returning results:', results.length, 'chunks');
     return results;
 }
 

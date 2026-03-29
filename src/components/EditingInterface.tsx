@@ -1,9 +1,11 @@
 // Editing Interface Component
 // Display 3-4 chunks at once with side-by-side English/Chinese view
 
+import { logger } from '../services/logger';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Edit3, Save, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import type { TranslatedChunk } from '../types';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
 interface EditingInterfaceProps {
     chunks: TranslatedChunk[];
@@ -92,8 +94,8 @@ export default function EditingInterface({
         setEditedChunks(updated);
     };
 
-    const handleSubmit = async () => {
-        console.log('[EditingInterface] handleSubmit called', {
+    const handleSubmit = useCallback(async () => {
+        logger.debug('EditingInterface] handleSubmit called', {
             editedChunksLength: editedChunks?.length,
             currentPage,
             totalPages,
@@ -103,12 +105,12 @@ export default function EditingInterface({
 
         // Guard: Skip if already saving or no chunks
         if (isSaving || isAnalyzing) {
-            console.log('[EditingInterface] Already processing, skipping');
+            logger.debug('EditingInterface] Already processing, skipping');
             return;
         }
 
         if (!editedChunks || editedChunks.length === 0) {
-            console.log('[EditingInterface] No chunks to submit');
+            logger.debug('EditingInterface] No chunks to submit');
             return;
         }
 
@@ -119,10 +121,10 @@ export default function EditingInterface({
 
             // Auto-advance to next page if not on the last page
             if (currentPage < totalPages - 1) {
-                console.log('[EditingInterface] Navigating to next page');
+                logger.debug('EditingInterface] Navigating to next page');
                 onNavigate(currentPage + 1);
             } else {
-                console.log('[EditingInterface] Last page submitted - review complete!');
+                logger.debug('EditingInterface] Last page submitted - review complete!');
                 // Notify parent that review is complete
                 if (onReviewComplete) {
                     onReviewComplete();
@@ -131,10 +133,20 @@ export default function EditingInterface({
         } catch (error) {
             console.error('[EditingInterface] Error submitting edits:', error);
         } finally {
-            console.log('[EditingInterface] Submit complete, resetting isSaving');
+            logger.debug('EditingInterface] Submit complete, resetting isSaving');
             setIsSaving(false);
         }
-    };
+    }, [editedChunks, chunks, isSaving, isAnalyzing, onSubmit, onNavigate, onReviewComplete, currentPage, totalPages, allChunks]);
+
+    // Keyboard shortcuts for editing
+    useKeyboardShortcuts({
+        'Mod+S': () => {
+            if (!isSaving && !isAnalyzing) handleSubmit();
+        },
+        'Mod+Enter': () => {
+            if (!isSaving && !isAnalyzing) handleSubmit();
+        },
+    }, [isSaving, isAnalyzing, handleSubmit]);
 
     const startChunk = currentPage * CHUNKS_PER_PAGE + 1;
     const endChunk = Math.min(startChunk + CHUNKS_PER_PAGE - 1, allChunks.length);

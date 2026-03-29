@@ -98,6 +98,10 @@ export default function GlossaryUpload({ onGlossaryLoaded, currentGlossary }: Gl
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
+                role="button"
+                aria-label="Drop zone for glossary CSV upload"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
             >
                 <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                 <p className="text-gray-600 mb-2">

@@ -1,4 +1,5 @@
 // Document Parser Service
+import { logger } from './logger';
 // Extract text from PDF documents using PDF.js or MinerU backend
 
 import * as pdfjsLib from 'pdfjs-dist';
@@ -265,7 +266,7 @@ export async function extractStructuredContent(
             };
         } catch (error) {
             // Fallback: parse client-side (no skeleton stored)
-            console.warn('[Parser] Backend markdown parsing failed, falling back to client-side:', error);
+            logger.warn('[Parser] Backend markdown parsing failed, falling back to client-side:', error);
             if (progressCallback) progressCallback(1, 1);
             return extractMarkdown(file);
         }
@@ -275,7 +276,7 @@ export async function extractStructuredContent(
     if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
         const { parsePdf } = await import('./apiClient');
 
-        console.log('[Parser] Using backend API for PDF extraction...');
+        logger.log('[Parser] Using backend API for PDF extraction...');
         if (progressCallback) progressCallback(0, 100);
 
         try {
@@ -283,7 +284,7 @@ export async function extractStructuredContent(
 
             if (!result.success || !result.document) {
                 const errorMsg = result.error || 'Unknown error';
-                console.error('[Parser] Backend parsing failed:', errorMsg);
+                logger.error('[Parser] Backend parsing failed:', errorMsg);
                 throw new Error(`PDF parsing failed: ${errorMsg}`);
             }
 
@@ -297,7 +298,7 @@ export async function extractStructuredContent(
                 backendDocId: result.doc_id ?? undefined,
             };
         } catch (error) {
-            console.error('[Parser] Backend API error:', error);
+            logger.error('[Parser] Backend API error:', error);
             throw error;
         }
     }

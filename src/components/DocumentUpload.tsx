@@ -1,6 +1,7 @@
 // Document Upload Component
+import { logger } from '../services/logger';
 import { useState, useRef } from 'react';
-import { FileUp, File, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { FileUp, File, Check, AlertCircle, Loader2, HardDrive } from 'lucide-react';
 import type { DocumentStructure } from '../types';
 import { extractStructuredContent } from '../services/documentParser';
 
@@ -20,7 +21,7 @@ export default function DocumentUpload({ onDocumentLoaded, currentDocument, apiK
     const [isProcessing, setIsProcessing] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
-    const [useMinerU, setUseMinerU] = useState(true); // MinerU enabled by default
+    const [useMinerU, setUseMinerU] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -68,7 +69,7 @@ export default function DocumentUpload({ onDocumentLoaded, currentDocument, apiK
             // NOTE: Don't pass API keys to extractStructuredContent
             // All Gemini API calls should go through the backend
             // The backend handles key management and rate limiting
-            console.log('[DocumentUpload] Starting document extraction via backend...');
+            logger.debug('DocumentUpload] Starting document extraction via backend...');
 
             const doc = await extractStructuredContent(
                 file,
@@ -145,6 +146,10 @@ export default function DocumentUpload({ onDocumentLoaded, currentDocument, apiK
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
+                    role="button"
+                    aria-label="Drop zone for document upload"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
                 >
                     <FileUp className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                     <p className="text-gray-600 mb-2">
@@ -156,7 +161,9 @@ export default function DocumentUpload({ onDocumentLoaded, currentDocument, apiK
                             browse
                         </button>
                     </p>
-                    <p className="text-sm text-gray-500">Maximum file size: 50MB</p>
+                    <p className="text-sm text-gray-500 flex items-center gap-2 justify-center">
+                        <HardDrive className="w-3.5 h-3.5" /> Maximum file size: 50MB
+                    </p>
 
                     {/* MinerU Toggle */}
                     <label className="mt-4 flex items-center gap-2 cursor-pointer bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">

@@ -3,6 +3,7 @@
  * Floating panel showing real-time status of backend services.
  */
 
+import { logger } from '../services/logger';
 import { useState, useEffect, useCallback } from 'react';
 import { Activity, Wifi, WifiOff, ChevronDown, ChevronUp, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
@@ -35,7 +36,7 @@ export default function StatusDashboard({
     const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
     const [isConnected, setIsConnected] = useState(false);
     const [statuses, setStatuses] = useState<StatusData | null>(null);
-    const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+    const [_lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
     // Connect to SSE stream
     useEffect(() => {
@@ -48,7 +49,7 @@ export default function StatusDashboard({
 
                 eventSource.onopen = () => {
                     setIsConnected(true);
-                    console.log('[StatusDashboard] Connected to status stream');
+                    logger.log('[StatusDashboard] Connected to status stream');
                 };
 
                 eventSource.addEventListener('status', (event) => {
@@ -57,7 +58,7 @@ export default function StatusDashboard({
                         setStatuses(data);
                         setLastUpdate(new Date());
                     } catch (e) {
-                        console.error('[StatusDashboard] Failed to parse status:', e);
+                        logger.error('[StatusDashboard] Failed to parse status:', e);
                     }
                 });
 
@@ -72,7 +73,7 @@ export default function StatusDashboard({
                     reconnectTimeout = setTimeout(connect, 5000);
                 };
             } catch (error) {
-                console.error('[StatusDashboard] Failed to connect:', error);
+                logger.error('[StatusDashboard] Failed to connect:', error);
                 setIsConnected(false);
             }
         };

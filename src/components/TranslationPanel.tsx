@@ -1,6 +1,8 @@
 // Translation Panel Component - Side by side view
-// Translation Panel Component - Side by side view
+import { useState, useMemo } from 'react';
 import type { TranslatedChunk, TermMatch } from '../types';
+import { Search, X } from 'lucide-react';
+import Skeleton from './Skeleton';
 
 interface TranslationPanelProps {
     chunks: TranslatedChunk[];
@@ -9,6 +11,18 @@ interface TranslationPanelProps {
 }
 
 export default function TranslationPanel({ chunks, isTranslating = false }: TranslationPanelProps) {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchField, setSearchField] = useState<'all' | 'original' | 'translation'>('all');
+
+    const filteredChunks = useMemo(() => {
+        if (!searchQuery.trim()) return chunks;
+        const q = searchQuery.toLowerCase();
+        return chunks.filter(chunk => {
+            if (searchField === 'original') return chunk.text.toLowerCase().includes(q);
+            if (searchField === 'translation') return chunk.translation.toLowerCase().includes(q);
+            return chunk.text.toLowerCase().includes(q) || chunk.translation.toLowerCase().includes(q);
+        });
+    }, [chunks, searchQuery, searchField]);
     /**
      * Escape HTML special characters
      */
@@ -100,12 +114,19 @@ export default function TranslationPanel({ chunks, isTranslating = false }: Tran
                     <h3 className="font-semibold text-gray-700">Original (English)</h3>
                     <h3 className="font-semibold text-gray-700">Translation (Chinese)</h3>
                 </div>
-                <div className="flex-grow flex items-center justify-center bg-slate-50/30">
-                    <div className="text-center">
-                        <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-                        <h3 className="text-lg font-medium text-slate-800">Initializing Translation Engine</h3>
-                        <p className="text-slate-500">Preparing terminology and context...</p>
-                    </div>
+                <div className="flex-grow overflow-y-auto p-6 bg-slate-50/30 space-y-4">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col md:grid md:grid-cols-2">
+                            <div className="p-4 border-r border-slate-100 bg-slate-50/50">
+                                <Skeleton className="w-16 h-3 mb-4" />
+                                <Skeleton.Text lines={3} />
+                            </div>
+                            <div className="p-4">
+                                <Skeleton className="w-16 h-3 mb-4 ml-auto" />
+                                <Skeleton.Text lines={3} />
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         );
@@ -113,18 +134,55 @@ export default function TranslationPanel({ chunks, isTranslating = false }: Tran
 
     return (
         <div className="bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-[700px]">
-            <div className="border-b bg-gray-50 p-4 flex-none grid grid-cols-2 gap-6">
-                <h3 className="font-semibold text-gray-700">Original (English)</h3>
-                <h3 className="font-semibold text-gray-700">Translation (Chinese)</h3>
+            <div className="border-b bg-gray-50 p-4 flex-none">
+                <div className="grid grid-cols-2 gap-6 mb-3">
+                    <h3 className="font-semibold text-gray-700">Original (English)</h3>
+                    <h3 className="font-semibold text-gray-700">Translation (Chinese)</h3>
+                </div>
+                {/* Search bar */}
+                <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search chunks..."
+                            className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                    <select
+                        value={searchField}
+                        onChange={(e) => setSearchField(e.target.value as typeof searchField)}
+                        className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                        <option value="all">All</option>
+                        <option value="original">Original</option>
+                        <option value="translation">Translation</option>
+                    </select>
+                    {searchQuery && (
+                        <span className="text-xs text-slate-500 whitespace-nowrap">
+                            {filteredChunks.length}/{chunks.length}
+                        </span>
+                    )}
+                </div>
             </div>
 
             <div className="flex-grow overflow-y-auto p-6 bg-slate-50/30">
                 <div className="space-y-4">
-                    {chunks.map((chunk, index) => (
+                    {filteredChunks.map((chunk) => (
                         <div key={chunk.id} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col md:grid md:grid-cols-2 items-stretch">
                             {/* Original Text */}
                             <div className="p-4 border-b md:border-b-0 md:border-r border-slate-100 bg-slate-50/50 h-full">
-                                <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-2 font-mono">Chunk {index + 1}</div>
+                                <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-2 font-mono">Chunk {chunk.position + 1}</div>
                                 <div
                                     className={`doc-content ${chunk.type === 'heading' ? 'font-bold text-lg' : ''}`}
                                     dangerouslySetInnerHTML={{
@@ -135,7 +193,7 @@ export default function TranslationPanel({ chunks, isTranslating = false }: Tran
 
                             {/* Translated Text */}
                             <div className="p-4 bg-white h-full">
-                                <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-2 font-mono md:text-right">段落 {index + 1}</div>
+                                <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-2 font-mono md:text-right">段落 {chunk.position + 1}</div>
                                 <div
                                     className={`doc-content doc-content-zh ${chunk.type === 'heading' ? 'font-bold text-lg' : ''}`}
                                     dangerouslySetInnerHTML={{

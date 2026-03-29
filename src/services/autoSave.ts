@@ -3,6 +3,8 @@
  * Saves translation state to localStorage at fixed intervals to prevent data loss.
  */
 
+import { logger } from './logger';
+
 const STORAGE_KEY = 'guided_translator_state';
 const AUTO_SAVE_INTERVAL = 30000; // 30 seconds
 
@@ -45,7 +47,7 @@ export function saveState(state: Partial<SavedState>): void {
 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(newState));
         isDirty = false;
-        console.log('[AutoSave] State saved at', newState.savedAt);
+        logger.debug('AutoSave] State saved at', newState.savedAt);
     } catch (error) {
         console.error('[AutoSave] Failed to save state:', error);
     }
@@ -60,7 +62,7 @@ export function loadState(): SavedState | null {
         if (!stored) return null;
 
         const state = JSON.parse(stored) as SavedState;
-        console.log('[AutoSave] State loaded from', state.savedAt);
+        logger.debug('AutoSave] State loaded from', state.savedAt);
         return state;
     } catch (error) {
         console.error('[AutoSave] Failed to load state:', error);
@@ -81,7 +83,7 @@ export function hasSavedState(): boolean {
 export function clearState(): void {
     try {
         localStorage.removeItem(STORAGE_KEY);
-        console.log('[AutoSave] State cleared');
+        logger.debug('AutoSave] State cleared');
     } catch (error) {
         console.error('[AutoSave] Failed to clear state:', error);
     }
@@ -116,7 +118,7 @@ export function startAutoSave(getStateCallback: () => Partial<SavedState>): void
         }
     }, AUTO_SAVE_INTERVAL);
 
-    console.log('[AutoSave] Started with interval', AUTO_SAVE_INTERVAL, 'ms');
+    logger.debug('AutoSave] Started with interval', AUTO_SAVE_INTERVAL, 'ms');
 }
 
 /**
@@ -126,7 +128,7 @@ export function stopAutoSave(): void {
     if (autoSaveInterval) {
         clearInterval(autoSaveInterval);
         autoSaveInterval = null;
-        console.log('[AutoSave] Stopped');
+        logger.debug('AutoSave] Stopped');
     }
 }
 

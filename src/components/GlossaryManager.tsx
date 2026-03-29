@@ -1,61 +1,37 @@
-// Glossary Manager Component
-// Full CRUD panel for managing glossary terms via backend API
-
 import { useState, useEffect, useCallback } from 'react';
 import {
-    Book,
-    Plus,
-    Trash2,
-    Upload,
-    Search,
-    X,
-    Check,
-    AlertCircle,
-    Edit2,
-    Filter,
-    RefreshCw
+    Book, Plus, Trash2, Upload, Search, X, Check, AlertCircle, Edit2, Filter, RefreshCw
 } from 'lucide-react';
-import {
-    GlossaryTerm,
-    GlossaryUploadResult,
-    listGlossary,
-    listGlossaryCategories,
-    createGlossaryTerm,
-    updateGlossaryTerm,
-    deleteGlossaryTerm,
-    uploadGlossary,
-    clearGlossary
+import type {
+    GlossaryTerm, GlossaryUploadResult
 } from '../services/apiClient';
+import {
+    listGlossary, listGlossaryCategories, createGlossaryTerm,
+    updateGlossaryTerm, deleteGlossaryTerm, uploadGlossary, clearGlossary
+} from '../services/apiClient';
+import ConfirmDialog from './ConfirmDialog';
 
 interface GlossaryManagerProps {
     onTermsUpdated?: () => void;
 }
 
 export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps) {
-    // State
     const [terms, setTerms] = useState<GlossaryTerm[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Filters
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState<string>('');
+    const [selectedCategory, setSelectedCategory] = useState('');
 
-    // Add/Edit form
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingTerm, setEditingTerm] = useState<GlossaryTerm | null>(null);
-    const [formData, setFormData] = useState<GlossaryTerm>({
-        english: '',
-        chinese: '',
-        notes: '',
-        category: ''
-    });
+    const [formData, setFormData] = useState<GlossaryTerm>({ english: '', chinese: '', notes: '', category: '' });
 
-    // Upload result
     const [uploadResult, setUploadResult] = useState<GlossaryUploadResult | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+    const [showClearAll, setShowClearAll] = useState(false);
 
-    // Load terms and categories
     const loadData = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -73,19 +49,14 @@ export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps
         }
     }, [selectedCategory, searchQuery]);
 
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
+    useEffect(() => { loadData(); }, [loadData]);
 
-    // Handle file upload
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         setLoading(true);
         setError(null);
         setUploadResult(null);
-
         try {
             const result = await uploadGlossary(file);
             setUploadResult(result);
@@ -95,25 +66,21 @@ export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps
             setError(err instanceof Error ? err.message : 'Upload failed');
         } finally {
             setLoading(false);
-            e.target.value = ''; // Reset input
+            e.target.value = '';
         }
     };
 
-    // Handle form submit (add or edit)
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.english.trim() || !formData.chinese.trim()) return;
-
         setLoading(true);
         setError(null);
-
         try {
             if (editingTerm?.id) {
                 await updateGlossaryTerm(editingTerm.id, formData);
             } else {
                 await createGlossaryTerm(formData);
             }
-
             setFormData({ english: '', chinese: '', notes: '', category: '' });
             setEditingTerm(null);
             setShowAddForm(false);
@@ -126,26 +93,22 @@ export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps
         }
     };
 
-    // Handle delete
-    const handleDelete = async (id: number) => {
-        if (!confirm('Delete this term?')) return;
-
+    const confirmDelete = async () => {
+        if (!deleteTarget) return;
         setLoading(true);
         try {
-            await deleteGlossaryTerm(id);
+            await deleteGlossaryTerm(deleteTarget);
             await loadData();
             onTermsUpdated?.();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Delete failed');
         } finally {
             setLoading(false);
+            setDeleteTarget(null);
         }
     };
 
-    // Handle clear all
-    const handleClearAll = async () => {
-        if (!confirm('Delete ALL glossary terms? This cannot be undone!')) return;
-
+    const confirmClearAll = async () => {
         setLoading(true);
         try {
             await clearGlossary();
@@ -155,17 +118,16 @@ export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps
             setError(err instanceof Error ? err.message : 'Clear failed');
         } finally {
             setLoading(false);
+            setShowClearAll(false);
         }
     };
 
-    // Start editing a term
     const startEdit = (term: GlossaryTerm) => {
         setEditingTerm(term);
         setFormData({ ...term });
         setShowAddForm(true);
     };
 
-    // Cancel form
     const cancelForm = () => {
         setShowAddForm(false);
         setEditingTerm(null);
@@ -173,304 +135,148 @@ export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps
     };
 
     return (
-        <div className="glossary-manager" style={{
-            backgroundColor: '#1a1a2e',
-            borderRadius: '12px',
-            padding: '20px',
-            color: '#e0e0e0'
-        }}>
+        <div className="bg-slate-800 rounded-xl p-5 text-slate-200">
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Book size={24} color="#8b5cf6" />
-                    <h2 style={{ margin: 0, fontSize: '18px' }}>Glossary Manager</h2>
-                    <span style={{
-                        backgroundColor: '#8b5cf6',
-                        color: 'white',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        fontSize: '12px'
-                    }}>
-                        {terms.length} terms
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <Book className="w-5 h-5 text-violet-400" />
+                    <h2 className="text-lg font-bold">Glossary Manager</h2>
+                    <span className="bg-violet-600 text-white text-xs px-2 py-0.5 rounded-full">
+                        {terms.length}
                     </span>
                 </div>
                 <button
-                    onClick={() => loadData()}
+                    onClick={loadData}
                     disabled={loading}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: '#888'
-                    }}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700 transition-colors"
                     title="Refresh"
                 >
-                    <RefreshCw size={18} className={loading ? 'spinning' : ''} />
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
             </div>
 
-            {/* Error display */}
+            {/* Error */}
             {error && (
-                <div style={{
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid #ef4444',
-                    borderRadius: '8px',
-                    padding: '12px',
-                    marginBottom: '16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                }}>
-                    <AlertCircle size={18} color="#ef4444" />
-                    <span>{error}</span>
+                <div className="flex items-center gap-2 p-3 bg-red-900/30 border border-red-700 rounded-lg mb-4 text-sm">
+                    <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                    <span className="text-red-300">{error}</span>
+                    <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-300">
+                        <X className="w-4 h-4" />
+                    </button>
                 </div>
             )}
 
             {/* Upload result */}
             {uploadResult && (
-                <div style={{
-                    backgroundColor: uploadResult.success ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                    border: `1px solid ${uploadResult.success ? '#22c55e' : '#ef4444'}`,
-                    borderRadius: '8px',
-                    padding: '12px',
-                    marginBottom: '16px'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                        <Check size={18} color="#22c55e" />
-                        <strong>Upload Complete</strong>
+                <div className={`p-3 rounded-lg mb-4 text-sm border ${
+                    uploadResult.success ? 'bg-emerald-900/30 border-emerald-700' : 'bg-red-900/30 border-red-700'
+                }`}>
+                    <div className="flex items-center gap-2 mb-1">
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        <strong className="text-emerald-300">Upload Complete</strong>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#aaa' }}>
-                        Added: {uploadResult.terms_added} | Updated: {uploadResult.terms_updated}
-                        {uploadResult.errors.length > 0 && (
-                            <span style={{ color: '#ef4444' }}> | Errors: {uploadResult.errors.length}</span>
-                        )}
-                    </div>
-                    <button
-                        onClick={() => setUploadResult(null)}
-                        style={{
-                            marginTop: '8px',
-                            background: 'none',
-                            border: 'none',
-                            color: '#888',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                        }}
-                    >
+                    <p className="text-slate-400">
+                        Added: {uploadResult.terms_added} · Updated: {uploadResult.terms_updated}
+                        {uploadResult.errors.length > 0 && <span className="text-red-400"> · Errors: {uploadResult.errors.length}</span>}
+                    </p>
+                    <button onClick={() => setUploadResult(null)} className="text-xs text-slate-500 hover:text-slate-300 mt-1">
                         Dismiss
                     </button>
                 </div>
             )}
 
-            {/* Actions bar */}
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                {/* Search */}
-                <div style={{
-                    flex: 1,
-                    minWidth: '200px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    backgroundColor: '#2a2a3e',
-                    borderRadius: '8px',
-                    padding: '0 12px'
-                }}>
-                    <Search size={16} color="#666" />
+            {/* Search + Filter + Actions */}
+            <div className="flex gap-2 mb-4 flex-wrap">
+                <div className="flex-1 min-w-[180px] flex items-center bg-slate-700 rounded-lg px-3">
+                    <Search className="w-4 h-4 text-slate-400" />
                     <input
                         type="text"
                         placeholder="Search terms..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{
-                            flex: 1,
-                            padding: '10px',
-                            background: 'none',
-                            border: 'none',
-                            color: '#e0e0e0',
-                            outline: 'none'
-                        }}
+                        className="flex-1 p-2 bg-transparent border-none text-sm text-slate-200 outline-none placeholder:text-slate-500"
                     />
                     {searchQuery && (
-                        <button
-                            onClick={() => setSearchQuery('')}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                        >
-                            <X size={16} color="#666" />
+                        <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-white">
+                            <X className="w-4 h-4" />
                         </button>
                     )}
                 </div>
 
-                {/* Category filter */}
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backgroundColor: '#2a2a3e',
-                    borderRadius: '8px',
-                    padding: '0 12px'
-                }}>
-                    <Filter size={16} color="#666" />
+                <div className="flex items-center bg-slate-700 rounded-lg px-3">
+                    <Filter className="w-4 h-4 text-slate-400" />
                     <select
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
-                        style={{
-                            padding: '10px',
-                            background: 'none',
-                            border: 'none',
-                            color: '#e0e0e0',
-                            outline: 'none',
-                            cursor: 'pointer'
-                        }}
+                        className="p-2 bg-transparent border-none text-sm text-slate-200 outline-none cursor-pointer"
                     >
-                        <option value="">All Categories</option>
-                        {categories.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                        ))}
+                        <option value="">All</option>
+                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                 </div>
 
-                {/* Add button */}
                 <button
                     onClick={() => setShowAddForm(true)}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '10px 16px',
-                        backgroundColor: '#8b5cf6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontWeight: 500
-                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-500 transition-colors"
                 >
-                    <Plus size={16} />
-                    Add Term
+                    <Plus className="w-4 h-4" /> Add
                 </button>
 
-                {/* Upload button */}
-                <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '10px 16px',
-                    backgroundColor: '#2a2a3e',
-                    color: '#e0e0e0',
-                    border: '1px dashed #444',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                }}>
-                    <Upload size={16} />
-                    Upload CSV
-                    <input
-                        type="file"
-                        accept=".csv"
-                        onChange={handleFileUpload}
-                        style={{ display: 'none' }}
-                    />
+                <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 text-slate-300 text-sm rounded-lg border border-dashed border-slate-600 hover:border-slate-400 cursor-pointer transition-colors">
+                    <Upload className="w-4 h-4" /> CSV
+                    <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
                 </label>
             </div>
 
             {/* Add/Edit Form */}
             {showAddForm && (
-                <form onSubmit={handleSubmit} style={{
-                    backgroundColor: '#2a2a3e',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    marginBottom: '16px'
-                }}>
-                    <h3 style={{ margin: '0 0 12px', fontSize: '14px' }}>
-                        {editingTerm ? 'Edit Term' : 'Add New Term'}
-                    </h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <form onSubmit={handleSubmit} className="bg-slate-700 rounded-lg p-4 mb-4">
+                    <h3 className="text-sm font-semibold mb-3">{editingTerm ? 'Edit Term' : 'Add New Term'}</h3>
+                    <div className="grid grid-cols-2 gap-3">
                         <input
                             type="text"
-                            placeholder="English term *"
+                            placeholder="English *"
                             value={formData.english}
                             onChange={(e) => setFormData({ ...formData, english: e.target.value })}
                             required
-                            style={{
-                                padding: '10px',
-                                backgroundColor: '#1a1a2e',
-                                border: '1px solid #444',
-                                borderRadius: '6px',
-                                color: '#e0e0e0',
-                                outline: 'none'
-                            }}
+                            className="p-2.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200 outline-none focus:border-violet-500"
                         />
                         <input
                             type="text"
-                            placeholder="Chinese translation *"
+                            placeholder="Chinese *"
                             value={formData.chinese}
                             onChange={(e) => setFormData({ ...formData, chinese: e.target.value })}
                             required
-                            style={{
-                                padding: '10px',
-                                backgroundColor: '#1a1a2e',
-                                border: '1px solid #444',
-                                borderRadius: '6px',
-                                color: '#e0e0e0',
-                                outline: 'none'
-                            }}
+                            className="p-2.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200 outline-none focus:border-violet-500"
                         />
                         <input
                             type="text"
-                            placeholder="Category (optional)"
+                            placeholder="Category"
                             value={formData.category || ''}
                             onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                            style={{
-                                padding: '10px',
-                                backgroundColor: '#1a1a2e',
-                                border: '1px solid #444',
-                                borderRadius: '6px',
-                                color: '#e0e0e0',
-                                outline: 'none'
-                            }}
+                            className="p-2.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200 outline-none focus:border-violet-500"
                         />
                         <input
                             type="text"
-                            placeholder="Notes (optional)"
+                            placeholder="Notes"
                             value={formData.notes || ''}
                             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                            style={{
-                                padding: '10px',
-                                backgroundColor: '#1a1a2e',
-                                border: '1px solid #444',
-                                borderRadius: '6px',
-                                color: '#e0e0e0',
-                                outline: 'none'
-                            }}
+                            className="p-2.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200 outline-none focus:border-violet-500"
                         />
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <div className="flex gap-2 mt-3">
                         <button
                             type="submit"
                             disabled={loading}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                padding: '8px 16px',
-                                backgroundColor: '#22c55e',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer'
-                            }}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-500 transition-colors"
                         >
-                            <Check size={16} />
+                            <Check className="w-4 h-4" />
                             {editingTerm ? 'Update' : 'Add'}
                         </button>
                         <button
                             type="button"
                             onClick={cancelForm}
-                            style={{
-                                padding: '8px 16px',
-                                backgroundColor: '#444',
-                                color: '#e0e0e0',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer'
-                            }}
+                            className="px-4 py-2 bg-slate-600 text-slate-300 text-sm rounded-lg hover:bg-slate-500 transition-colors"
                         >
                             Cancel
                         </button>
@@ -478,77 +284,55 @@ export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps
                 </form>
             )}
 
-            {/* Terms list */}
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {/* Terms Table */}
+            <div className="max-h-[400px] overflow-y-auto">
                 {loading && terms.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                    <div className="text-center py-10 text-slate-500">
+                        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
                         Loading...
                     </div>
                 ) : terms.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-                        No glossary terms. Upload a CSV or add terms manually.
+                    <div className="text-center py-10 text-slate-500">
+                        <Book className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p>No glossary terms yet.</p>
+                        <p className="text-xs mt-1">Upload a CSV or add terms manually.</p>
                     </div>
                 ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <table className="w-full text-sm">
                         <thead>
-                            <tr style={{ borderBottom: '1px solid #333' }}>
-                                <th style={{ textAlign: 'left', padding: '10px', color: '#888', fontSize: '12px' }}>English</th>
-                                <th style={{ textAlign: 'left', padding: '10px', color: '#888', fontSize: '12px' }}>Chinese</th>
-                                <th style={{ textAlign: 'left', padding: '10px', color: '#888', fontSize: '12px' }}>Category</th>
-                                <th style={{ textAlign: 'right', padding: '10px', color: '#888', fontSize: '12px' }}>Actions</th>
+                            <tr className="border-b border-slate-700">
+                                <th className="text-left p-2.5 text-slate-400 font-medium text-xs">English</th>
+                                <th className="text-left p-2.5 text-slate-400 font-medium text-xs">Chinese</th>
+                                <th className="text-left p-2.5 text-slate-400 font-medium text-xs">Category</th>
+                                <th className="text-right p-2.5 text-slate-400 font-medium text-xs">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {terms.map((term) => (
-                                <tr
-                                    key={term.id}
-                                    style={{
-                                        borderBottom: '1px solid #2a2a3e',
-                                        transition: 'background-color 0.2s'
-                                    }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2a2a3e')}
-                                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                >
-                                    <td style={{ padding: '12px 10px' }}>{term.english}</td>
-                                    <td style={{ padding: '12px 10px' }}>{term.chinese}</td>
-                                    <td style={{ padding: '12px 10px' }}>
+                                <tr key={term.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                                    <td className="p-2.5 text-slate-200">{term.english}</td>
+                                    <td className="p-2.5 text-slate-200">{term.chinese}</td>
+                                    <td className="p-2.5">
                                         {term.category && (
-                                            <span style={{
-                                                backgroundColor: '#8b5cf6',
-                                                color: 'white',
-                                                padding: '2px 8px',
-                                                borderRadius: '4px',
-                                                fontSize: '11px'
-                                            }}>
+                                            <span className="bg-violet-600/30 text-violet-300 px-2 py-0.5 rounded text-xs">
                                                 {term.category}
                                             </span>
                                         )}
                                     </td>
-                                    <td style={{ padding: '12px 10px', textAlign: 'right' }}>
+                                    <td className="p-2.5 text-right">
                                         <button
                                             onClick={() => startEdit(term)}
-                                            style={{
-                                                background: 'none',
-                                                border: 'none',
-                                                cursor: 'pointer',
-                                                padding: '4px',
-                                                marginRight: '4px'
-                                            }}
+                                            className="p-1 text-violet-400 hover:text-violet-300 transition-colors"
                                             title="Edit"
                                         >
-                                            <Edit2 size={16} color="#8b5cf6" />
+                                            <Edit2 className="w-4 h-4" />
                                         </button>
                                         <button
-                                            onClick={() => term.id && handleDelete(term.id)}
-                                            style={{
-                                                background: 'none',
-                                                border: 'none',
-                                                cursor: 'pointer',
-                                                padding: '4px'
-                                            }}
+                                            onClick={() => term.id && setDeleteTarget(term.id)}
+                                            className="p-1 ml-1 text-red-400 hover:text-red-300 transition-colors"
                                             title="Delete"
                                         >
-                                            <Trash2 size={16} color="#ef4444" />
+                                            <Trash2 className="w-4 h-4" />
                                         </button>
                                     </td>
                                 </tr>
@@ -558,35 +342,37 @@ export default function GlossaryManager({ onTermsUpdated }: GlossaryManagerProps
                 )}
             </div>
 
-            {/* Footer with clear all */}
+            {/* Footer */}
             {terms.length > 0 && (
-                <div style={{
-                    marginTop: '16px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid #333',
-                    display: 'flex',
-                    justifyContent: 'flex-end'
-                }}>
+                <div className="mt-4 pt-3 border-t border-slate-700 flex justify-end">
                     <button
-                        onClick={handleClearAll}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '8px 12px',
-                            backgroundColor: 'transparent',
-                            color: '#ef4444',
-                            border: '1px solid #ef4444',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                        }}
+                        onClick={() => setShowClearAll(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-red-400 border border-red-700 rounded-lg text-xs hover:bg-red-900/30 transition-colors"
                     >
-                        <Trash2 size={14} />
-                        Clear All
+                        <Trash2 className="w-3.5 h-3.5" /> Clear All
                     </button>
                 </div>
             )}
+
+            {/* Confirm Dialogs */}
+            <ConfirmDialog
+                isOpen={deleteTarget !== null}
+                title="Delete Term?"
+                message="This glossary term will be permanently deleted."
+                confirmLabel="Delete"
+                variant="danger"
+                onConfirm={confirmDelete}
+                onCancel={() => setDeleteTarget(null)}
+            />
+            <ConfirmDialog
+                isOpen={showClearAll}
+                title="Clear All Terms?"
+                message="This will delete ALL glossary terms. This cannot be undone!"
+                confirmLabel="Clear All"
+                variant="danger"
+                onConfirm={confirmClearAll}
+                onCancel={() => setShowClearAll(false)}
+            />
         </div>
     );
 }

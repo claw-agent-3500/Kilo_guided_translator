@@ -5,6 +5,7 @@
  * but delegates PDF extraction to the Python FastAPI backend.
  */
 
+import { logger } from './logger';
 import * as api from './apiClient';
 import type { DocumentStructure } from '../types';
 
@@ -39,7 +40,7 @@ export async function extractWithMinerU(
     file: File,
     onProgress?: (current: number, total: number) => void
 ): Promise<DocumentStructure> {
-    console.log('[MinerU] Starting extraction via backend for:', file.name);
+    logger.debug('MinerU] Starting extraction via backend for:', file.name);
 
     if (onProgress) onProgress(0, 100);
 
@@ -52,7 +53,7 @@ export async function extractWithMinerU(
 
         if (onProgress) onProgress(100, 100);
 
-        console.log('[MinerU] Extraction complete via backend, word count:', result.document.word_count);
+        logger.debug('MinerU] Extraction complete via backend, word count:', result.document.word_count);
 
         // Convert API response to frontend DocumentStructure format
         return {

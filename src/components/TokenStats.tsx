@@ -1,4 +1,6 @@
-export default function TokenStats({ usage }: { usage: { input: number; output: number; total: number } }) {
+import { memo } from 'react';
+
+function TokenStats({ usage }: { usage: { input: number; output: number; total: number } }) {
     if (usage.total === 0) return null;
 
     return (
@@ -20,3 +22,5 @@ export default function TokenStats({ usage }: { usage: { input: number; output: 
         </div>
     );
 }
+
+export default memo(TokenStats);

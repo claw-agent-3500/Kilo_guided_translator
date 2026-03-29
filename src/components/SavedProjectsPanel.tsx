@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { FolderOpen, Calendar, Trash2, CheckCircle, Loader2 } from 'lucide-react';
 import type { Project } from '../types';
 import { storageService } from '../services/storageService';
+import ConfirmDialog from './ConfirmDialog';
 
 interface SavedProjectsPanelProps {
     isOpen: boolean;
@@ -14,6 +15,7 @@ interface SavedProjectsPanelProps {
 export default function SavedProjectsPanel({ isOpen, onClose, onLoadProject, currentProjectId }: SavedProjectsPanelProps) {
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
     // Load projects when panel opens or refreshes
     const loadProjects = async () => {
@@ -38,9 +40,14 @@ export default function SavedProjectsPanel({ isOpen, onClose, onLoadProject, cur
 
     const handleDelete = async (e: React.MouseEvent, projectId: string) => {
         e.stopPropagation();
-        if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-            await storageService.deleteProject(projectId);
-            loadProjects(); // Refresh list
+        setDeleteTarget(projectId);
+    };
+
+    const confirmDelete = async () => {
+        if (deleteTarget) {
+            await storageService.deleteProject(deleteTarget);
+            setDeleteTarget(null);
+            loadProjects();
         }
     };
 
@@ -167,6 +174,16 @@ export default function SavedProjectsPanel({ isOpen, onClose, onLoadProject, cur
                     </div>
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={deleteTarget !== null}
+                title="Delete Project?"
+                message="This will permanently delete the project and all its translation data. This cannot be undone."
+                confirmLabel="Delete"
+                variant="danger"
+                onConfirm={confirmDelete}
+                onCancel={() => setDeleteTarget(null)}
+            />
         </>
     );
 }

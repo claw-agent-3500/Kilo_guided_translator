@@ -1,13 +1,15 @@
 // Progress Tracker Component
-import { Loader2, Clock, CheckCircle2 } from 'lucide-react';
-import type { TranslationProgress } from '../types';
+import { memo } from 'react';
+import { Loader2, Clock, CheckCircle2, FileText, Hash, List, Table } from 'lucide-react';
+import type { TranslationProgress, TranslatedChunk } from '../types';
 
 interface ProgressTrackerProps {
     progress: TranslationProgress;
     isTranslating: boolean;
+    translatedChunks?: TranslatedChunk[];
 }
 
-export default function ProgressTracker({ progress, isTranslating }: ProgressTrackerProps) {
+function ProgressTracker({ progress, isTranslating, translatedChunks = [] }: ProgressTrackerProps) {
     if (!isTranslating && progress.current === 0) {
         return null;
     }
@@ -81,6 +83,26 @@ export default function ProgressTracker({ progress, isTranslating }: ProgressTra
                     </div>
                 </div>
             )}
+
+            {/* Chunk Type Breakdown */}
+            {translatedChunks.length > 0 && (
+                <div className="flex items-center gap-4 text-xs text-slate-500 pt-2 border-t border-slate-100">
+                    <span className="font-medium text-slate-600">Translated:</span>
+                    {['heading', 'paragraph', 'list', 'table'].map(type => {
+                        const count = translatedChunks.filter(c => c.type === type).length;
+                        if (count === 0) return null;
+                        const Icon = type === 'heading' ? Hash : type === 'list' ? List : type === 'table' ? Table : FileText;
+                        return (
+                            <span key={type} className="flex items-center gap-1">
+                                <Icon className="w-3 h-3" />
+                                {count} {type}{count !== 1 ? 's' : ''}
+                            </span>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
+
+export default memo(ProgressTracker);

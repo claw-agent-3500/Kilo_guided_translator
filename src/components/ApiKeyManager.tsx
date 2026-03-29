@@ -9,6 +9,7 @@ interface ApiKeyConfig {
 interface ApiKeyManagerProps {
     onKeysUpdated: (keys: ApiKeyConfig[]) => void;
     initialKeys?: string[] | ApiKeyConfig[];
+    inline?: boolean; // When true, render inline instead of as a modal button
 }
 
 // Helper to convert legacy string[] to ApiKeyConfig[]
@@ -20,11 +21,11 @@ function normalizeKeys(keys: string[] | ApiKeyConfig[]): ApiKeyConfig[] {
     return keys as ApiKeyConfig[];
 }
 
-export default function ApiKeyManager({ onKeysUpdated, initialKeys = [] }: ApiKeyManagerProps) {
+export default function ApiKeyManager({ onKeysUpdated, initialKeys = [], inline = false }: ApiKeyManagerProps) {
     const [keys, setKeys] = useState<ApiKeyConfig[]>(normalizeKeys(initialKeys));
     const [newKey, setNewKey] = useState('');
     const [newKeyIsPaid, setNewKeyIsPaid] = useState(false);
-    const [isOpen, setIsOpen] = useState(false);
+    const [isOpen, setIsOpen] = useState(inline); // Auto-open in inline mode
     const [showKey, setShowKey] = useState(false);
 
     useEffect(() => {
@@ -63,6 +64,37 @@ export default function ApiKeyManager({ onKeysUpdated, initialKeys = [] }: ApiKe
 
     const paidCount = keys.filter(k => k.isPaid).length;
     const freeCount = keys.length - paidCount;
+
+    // Inline mode: render just the input + add button (no modal wrapper)
+    if (inline) {
+        return (
+            <div className="flex gap-2 items-center">
+                <div className="relative flex-1 max-w-md">
+                    <input
+                        type={showKey ? "text" : "password"}
+                        value={newKey}
+                        onChange={(e) => setNewKey(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Paste your Gemini API key here..."
+                        className="w-full px-4 py-3 border-2 border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none pr-10 text-sm"
+                    />
+                    <button
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                        {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                </div>
+                <button
+                    onClick={handleAddKey}
+                    disabled={!newKey.trim()}
+                    className="bg-amber-600 text-white px-5 py-3 rounded-xl hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold text-sm"
+                >
+                    Add Key
+                </button>
+            </div>
+        );
+    }
 
     if (!isOpen) {
         return (

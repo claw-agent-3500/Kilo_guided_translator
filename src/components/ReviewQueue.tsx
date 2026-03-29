@@ -13,7 +13,8 @@ import {
     ChevronUp,
     RotateCcw,
     Eye,
-    EyeOff
+    EyeOff,
+    X
 } from 'lucide-react';
 import {
     ReviewNode,
@@ -178,7 +179,7 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
     };
 
     // Render a chunk — HTML table or plain text
-    const renderContent = (text: string | null | undefined, fallback: string = 'No content', isOriginal: boolean = false) => {
+    const renderContent = (text: string | null | undefined, fallback: string = 'No content', _isOriginal: boolean = false) => {
         if (!text) return <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>{fallback}</span>;
         if (isHtmlTable(text)) {
             return (
@@ -215,197 +216,90 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
     };
 
     return (
-        <div className="review-queue" style={{
-            backgroundColor: '#ffffff',
-            borderRadius: '16px',
-            padding: '24px',
-            color: '#1e293b',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)'
-        }}>
+        <div className="bg-white rounded-xl p-6 text-slate-800 shadow-lg">
             {/* Header */}
-            <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between', 
-                marginBottom: '20px',
-                flexWrap: 'wrap',
-                gap: '12px'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{
-                        backgroundColor: '#f0fdf4',
-                        padding: '10px',
-                        borderRadius: '12px'
-                    }}>
-                        <ClipboardCheck size={24} color="#16a34a" />
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                    <div className="bg-emerald-50 p-2.5 rounded-xl">
+                        <ClipboardCheck size={24} className="text-emerald-600" />
                     </div>
                     <div>
-                        <h2 style={{ 
-                            margin: 0, 
-                            fontSize: '22px', 
-                            fontWeight: 600,
-                            color: '#0f172a'
-                        }}>
-                            Review Queue
-                        </h2>
-                        <p style={{ 
-                            margin: '4px 0 0 0', 
-                            fontSize: '13px', 
-                            color: '#64748b' 
-                        }}>
-                            Approve or edit translations
-                        </p>
+                        <h2 className="text-xl font-bold text-slate-900">Review Queue</h2>
+                        <p className="text-sm text-slate-500 mt-0.5">Approve or edit translations</p>
                     </div>
                 </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="flex items-center gap-2">
                     {nodes.length > 0 && (
-                        <span style={{
-                            backgroundColor: nodes.length > 0 ? '#fef3c7' : '#dcfce7',
-                            color: nodes.length > 0 ? '#b45309' : '#15803d',
-                            padding: '6px 14px',
-                            borderRadius: '20px',
-                            fontSize: '14px',
-                            fontWeight: 500
-                        }}>
+                        <span className="bg-amber-100 text-amber-700 px-3.5 py-1.5 rounded-full text-sm font-medium">
                             {nodes.length} pending
                         </span>
                     )}
                     <button
-                        onClick={() => loadData()}
+                        onClick={loadData}
                         disabled={loading}
-                        style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: loading ? 'wait' : 'pointer',
-                            color: '#64748b',
-                            padding: '8px',
-                            borderRadius: '8px',
-                            transition: 'all 0.2s'
-                        }}
+                        className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
                         title="Refresh"
                     >
-                        <RefreshCw size={20} className={loading ? 'spinning' : ''} />
+                        <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                     </button>
                 </div>
             </div>
 
             {/* Stats bar */}
             {stats && (
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
-                    gap: '16px',
-                    marginBottom: '20px',
-                    padding: '16px',
-                    backgroundColor: '#f8fafc',
-                    borderRadius: '12px',
-                    border: '1px solid #e2e8f0'
-                }}>
-                    <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '28px', fontWeight: 700, color: '#7c3aed' }}>
-                            {stats.progress_percent}%
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Progress</div>
+                <div className="grid grid-cols-5 gap-4 mb-5 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="text-center">
+                        <div className="text-2xl font-bold text-violet-600">{stats.progress_percent}%</div>
+                        <div className="text-xs text-slate-500 mt-0.5">Progress</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '22px', fontWeight: 600, color: '#3b82f6' }}>{stats.pending}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Pending</div>
+                    <div className="text-center">
+                        <div className="text-xl font-semibold text-blue-600">{stats.pending}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">Pending</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '22px', fontWeight: 600, color: '#f59e0b' }}>{stats.review}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>In Review</div>
+                    <div className="text-center">
+                        <div className="text-xl font-semibold text-amber-500">{stats.review}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">In Review</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '22px', fontWeight: 600, color: '#22c55e' }}>{stats.approved}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Approved</div>
+                    <div className="text-center">
+                        <div className="text-xl font-semibold text-emerald-500">{stats.approved}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">Approved</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '22px', fontWeight: 600, color: '#ef4444' }}>{stats.failed}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Failed</div>
+                    <div className="text-center">
+                        <div className="text-xl font-semibold text-red-500">{stats.failed}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">Failed</div>
                     </div>
                 </div>
             )}
 
             {/* Error display */}
             {error && (
-                <div style={{
-                    backgroundColor: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    borderRadius: '12px',
-                    padding: '14px',
-                    marginBottom: '20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px'
-                }}>
-                    <AlertTriangle size={20} color="#dc2626" />
-                    <span style={{ color: '#b91c1c', fontSize: '14px' }}>{error}</span>
+                <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl mb-5">
+                    <AlertTriangle size={20} className="text-red-500 flex-shrink-0" />
+                    <span className="text-red-700 text-sm">{error}</span>
+                    <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">
+                        <X size={16} />
+                    </button>
                 </div>
             )}
 
             {/* Toolbar */}
             {nodes.length > 0 && (
-                <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '16px',
-                    padding: '12px 16px',
-                    backgroundColor: '#f1f5f9',
-                    borderRadius: '10px'
-                }}>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                            onClick={expandAll}
-                            style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#fff',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '6px',
-                                fontSize: '13px',
-                                color: '#475569',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                            }}
-                        >
+                <div className="flex justify-between items-center mb-4 p-3 bg-slate-50 rounded-lg">
+                    <div className="flex gap-2">
+                        <button onClick={expandAll} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-md text-sm text-slate-600 hover:bg-slate-50 cursor-pointer">
                             <Eye size={14} /> Expand All
                         </button>
-                        <button
-                            onClick={collapseAll}
-                            style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#fff',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '6px',
-                                fontSize: '13px',
-                                color: '#475569',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                            }}
-                        >
+                        <button onClick={collapseAll} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-md text-sm text-slate-600 hover:bg-slate-50 cursor-pointer">
                             <EyeOff size={14} /> Collapse All
                         </button>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '13px', color: '#64748b' }}>Show original:</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-slate-500">Show original:</span>
                         <button
                             onClick={() => setShowOriginal(!showOriginal)}
-                            style={{
-                                padding: '6px 12px',
-                                backgroundColor: showOriginal ? '#7c3aed' : '#fff',
-                                color: showOriginal ? '#fff' : '#475569',
-                                border: '1px solid',
-                                borderColor: showOriginal ? '#7c3aed' : '#e2e8f0',
-                                borderRadius: '6px',
-                                fontSize: '13px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                            }}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer ${
+                                showOriginal ? 'bg-violet-600 text-white' : 'bg-white text-slate-600 border border-slate-200'
+                            }`}
                         >
                             {showOriginal ? 'Yes' : 'No'}
                         </button>
@@ -414,41 +308,19 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
             )}
 
             {/* Nodes list */}
-            <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+            <div className="max-h-[600px] overflow-y-auto">
                 {loading && nodes.length === 0 ? (
-                    <div style={{ 
-                        textAlign: 'center', 
-                        padding: '60px 40px', 
-                        color: '#94a3b8',
-                        backgroundColor: '#f8fafc',
-                        borderRadius: '12px'
-                    }}>
-                        <RefreshCw size={32} className="spinning" style={{ marginBottom: '12px' }} />
-                        <div style={{ fontSize: '16px' }}>Loading review queue...</div>
+                    <div className="text-center py-14 text-slate-400 bg-slate-50 rounded-xl">
+                        <RefreshCw size={32} className="animate-spin mx-auto mb-3" />
+                        <div className="text-base">Loading review queue...</div>
                     </div>
                 ) : nodes.length === 0 ? (
-                    <div style={{ 
-                        textAlign: 'center', 
-                        padding: '60px 40px', 
-                        backgroundColor: '#f0fdf4',
-                        borderRadius: '12px',
-                        border: '1px solid #bbf7d0'
-                    }}>
-                        <div style={{
-                            backgroundColor: '#dcfce7',
-                            padding: '16px',
-                            borderRadius: '50%',
-                            display: 'inline-flex',
-                            marginBottom: '16px'
-                        }}>
-                            <Check size={32} color="#16a34a" />
+                    <div className="text-center py-14 bg-emerald-50 rounded-xl border border-emerald-200">
+                        <div className="inline-flex bg-emerald-100 p-4 rounded-full mb-4">
+                            <Check size={32} className="text-emerald-600" />
                         </div>
-                        <div style={{ fontSize: '18px', fontWeight: 500, color: '#15803d' }}>
-                            All translations reviewed!
-                        </div>
-                        <div style={{ fontSize: '14px', color: '#16a34a', marginTop: '8px' }}>
-                            Great work! Your document is ready for export.
-                        </div>
+                        <div className="text-lg font-medium text-emerald-800">All translations reviewed!</div>
+                        <div className="text-sm text-emerald-600 mt-2">Great work! Your document is ready for export.</div>
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -717,16 +589,6 @@ export default function ReviewQueue({ documentId, onNodeUpdated }: ReviewQueuePr
                 )}
             </div>
 
-            {/* CSS for spinning animation */}
-            <style>{`
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-                .spinning {
-                    animation: spin 1s linear infinite;
-                }
-            `}</style>
         </div>
     );
 }

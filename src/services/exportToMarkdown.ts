@@ -1,4 +1,5 @@
 import { saveAs } from 'file-saver';
+import { logger } from './logger';
 import type { Chunk, TranslatedChunk } from '../types';
 
 /**
@@ -57,5 +58,5 @@ export function downloadAsMarkdown(chunks: Chunk[] | TranslatedChunk[], filename
     const markdown = convertChunksToMarkdown(chunks, true);
     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
     saveAs(blob, `${filename}.md`);
-    console.log(`Markdown export initiated: ${filename}.md`);
+    logger.log(`Markdown export initiated: ${filename}.md`);
 }

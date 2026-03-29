@@ -10,15 +10,26 @@
  * - Actual Gemini API calls
  */
 
+import { logger } from './logger';
 import * as api from './apiClient';
 import type { GlossaryEntry, TermMatch, TranslatedChunk, Chunk } from '../types';
 
 // Re-export types for backwards compatibility
 export type { GlossaryEntry, TermMatch, TranslatedChunk, Chunk };
 
+// ============ Cancellation Support ============
+let abortController: AbortController | null = null;
 
+export function cancelTranslation(): void {
+    if (abortController) {
+        abortController.abort();
+        abortController = null;
+    }
+}
 
-// ============ API Key Management ============
+export function isTranslating(): boolean {
+    return abortController !== null;
+}// ============ API Key Management ============
 
 interface ApiKeyConfig {
     key: string;
@@ -42,11 +53,11 @@ export async function setApiKeys(keys: string[] | ApiKeyConfig[]): Promise<void>
     localFreeKeys = keyConfigs.filter(k => !k.isPaid).map(k => k.key);
 
     // DEBUG: Log each key with its status
-    console.log('[DEBUG KEYS Frontend] Configuring API keys:');
+    logger.debug('DEBUG KEYS Frontend] Configuring API keys:');
     keyConfigs.forEach((k, i) => {
-        console.log(`  Key ${i}: ${k.key.substring(0, 8)}...${k.key.slice(-4)} [${k.isPaid ? 'PAID' : 'FREE'}]`);
+        logger.log(`  Key ${i}: ${k.key.substring(0, 8)}...${k.key.slice(-4)} [${k.isPaid ? 'PAID' : 'FREE'}]`);
     });
-    console.log(`[DEBUG KEYS Frontend] Total: ${localPaidKeys.length} paid, ${localFreeKeys.length} free`);
+    logger.log(`[DEBUG KEYS Frontend] Total: ${localPaidKeys.length} paid, ${localFreeKeys.length} free`);
 
     // Send all keys to backend (backend manages rotation)
     const keyStrings = keyConfigs.map(k => k.key);
@@ -56,12 +67,12 @@ export async function setApiKeys(keys: string[] | ApiKeyConfig[]): Promise<void>
 
     try {
         await api.setApiKeys(keyStrings, mineruKey || undefined);
-        console.log(`[DEBUG KEYS Frontend] Keys sent to backend successfully`);
+        logger.log(`[DEBUG KEYS Frontend] Keys sent to backend successfully`);
         if (mineruKey) {
-            console.log('[DEBUG KEYS Frontend] MinerU key also sent to backend');
+            logger.debug('DEBUG KEYS Frontend] MinerU key also sent to backend');
         }
     } catch (error) {
-        console.error('[DEBUG KEYS Frontend] Failed to set API keys on backend:', error);
+        logger.error('[DEBUG KEYS Frontend] Failed to set API keys on backend:', error);
         throw error;
     }
 }
@@ -79,7 +90,7 @@ export function hasPaidKeys(): boolean {
  */
 export function skipToPaidKey(): boolean {
     if (localPaidKeys.length > 0) {
-        console.log('Paid keys available - backend will use them after free keys exhaust');
+        logger.log('Paid keys available - backend will use them after free keys exhaust');
         return true;
     }
     return false;
@@ -187,7 +198,7 @@ export async function translateChunk(
 
         return fromApiChunk(result, chunk, glossary);
     } catch (error) {
-        console.error(`Failed to translate chunk ${chunk.id}:`, error);
+        logger.error(`Failed to translate chunk ${chunk.id}:`, error);
         throw error;
     }
 }
@@ -209,9 +220,9 @@ export async function translateChunks(
     // Ensure keys are synced to backend (in case backend was restarted)
     const allKeys = [...localFreeKeys, ...localPaidKeys];
     if (allKeys.length > 0) {
-        console.log('[translateChunks] Re-syncing keys to backend before translation...');
+        logger.log('[translateChunks] Re-syncing keys to backend before translation...');
         await api.setApiKeys(allKeys, import.meta.env.VITE_MINERU_API_KEY || undefined);
-        console.log('[translateChunks] Keys synced, proceeding with translation');
+        logger.log('[translateChunks] Keys synced, proceeding with translation');
     }
 
     // Create a map for quick chunk lookup
@@ -231,7 +242,7 @@ export async function translateChunks(
                 }
             },
             (chunkId, error) => {
-                console.error(`Translation error for chunk ${chunkId}:`, error);
+                logger.error(`Translation error for chunk ${chunkId}:`, error);
                 if (onStatusUpdate) {
                     onStatusUpdate(`Error translating chunk ${chunkId}: ${error}`);
                 }
@@ -242,7 +253,7 @@ export async function translateChunks(
         return apiResults.map(apiChunk => {
             const originalChunk = chunkMap.get(apiChunk.id);
             if (!originalChunk) {
-                console.warn(`Original chunk not found for ID: ${apiChunk.id}`);
+                logger.warn(`Original chunk not found for ID: ${apiChunk.id}`);
                 // Return a minimal TranslatedChunk
                 return {
                     id: apiChunk.id,
@@ -258,7 +269,7 @@ export async function translateChunks(
         });
 
     } catch (error) {
-        console.error('Batch translation failed:', error);
+        logger.error('Batch translation failed:', error);
 
         // Return error chunks for all
         return chunks.map(chunk => ({
