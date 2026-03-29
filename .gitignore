@@ -51,3 +51,4 @@ __pycache__/
 src-tauri/target/
 src-tauri/WixTools/
 src-tauri/icons/*.ico
+*.db

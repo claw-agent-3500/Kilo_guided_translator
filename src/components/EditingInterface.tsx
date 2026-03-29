@@ -225,14 +225,27 @@ export default function EditingInterface({
 
             {/* Navigation & Actions */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-                <button
-                    onClick={() => onNavigate(currentPage - 1)}
-                    disabled={currentPage === 0}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                    <ChevronLeft className="w-4 h-4" />
-                    Previous
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => onNavigate(currentPage - 1)}
+                        disabled={currentPage === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ChevronLeft className="w-4 h-4" />
+                        Previous
+                    </button>
+                    <button
+                        onClick={async () => {
+                            // Skip: approve current page as-is without analysis, advance
+                            await onSubmit(editedChunks);
+                        }}
+                        disabled={isSaving || isAnalyzing}
+                        className="flex items-center gap-2 px-4 py-2 text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors text-sm"
+                        title="Approve this page as-is and move to next"
+                    >
+                        Skip (Accept As-Is)
+                    </button>
+                </div>
 
                 <div className="flex items-center gap-4">
                     {hasChanges && (

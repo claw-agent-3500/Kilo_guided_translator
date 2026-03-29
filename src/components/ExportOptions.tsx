@@ -20,6 +20,7 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
     const [exportProgress, setExportProgress] = useState(0);
     const [showSmartPdfModal, setShowSmartPdfModal] = useState(false);
     const [copiedField, setCopiedField] = useState<string | null>(null);
+    const [showMoreFormats, setShowMoreFormats] = useState(false);
 
     const handleCopyToClipboard = async (content: string, field: string) => {
         try {
@@ -180,124 +181,126 @@ export default function ExportOptions({ translatedChunks }: ExportOptionsProps) 
 
             {/* Download Options - Grouped */}
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Download Files</p>
-            <div className="grid md:grid-cols-2 gap-3 mb-4">
-                {/* PDF Export */}
+
+            {/* Primary 3 Options */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+                {/* PDF Export — Primary */}
                 <button
                     onClick={handleExportPDF}
                     disabled={isExporting}
-                    className="flex items-center justify-between p-4 border border-blue-200 bg-blue-50/50 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group disabled:opacity-70 disabled:cursor-wait"
+                    className="flex flex-col items-center gap-2 p-5 border-2 border-blue-200 bg-blue-50/50 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all group disabled:opacity-70 disabled:cursor-wait"
                 >
-                    <div className="flex items-center gap-3">
-                        {isExporting ? (
-                            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                        ) : (
-                            <File className="w-5 h-5 text-blue-600" />
-                        )}
-                        <div className="text-left">
-                            <p className="font-medium text-slate-800">
-                                {isExporting ? `Generating PDF (${exportProgress}%)` : 'Export as PDF'}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                                {isExporting ? 'Please wait...' : 'Formatted Chinese document'}
-                            </p>
-                        </div>
+                    {isExporting ? (
+                        <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
+                    ) : (
+                        <File className="w-7 h-7 text-blue-600" />
+                    )}
+                    <div className="text-center">
+                        <p className="font-semibold text-slate-800 text-sm">
+                            {isExporting ? `PDF (${exportProgress}%)` : 'PDF'}
+                        </p>
+                        <p className="text-[11px] text-slate-500">Formatted</p>
                     </div>
                 </button>
 
-                {/* New Terms */}
-                <button
-                    onClick={handleExportNewTerms}
-                    className="flex items-center justify-between p-4 border border-emerald-200 bg-emerald-50/50 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
-                >
-                    <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-emerald-600" />
-                        <div className="text-left">
-                            <p className="font-medium text-slate-800">New Terms (CSV)</p>
-                            <p className="text-xs text-slate-500">Export discovered terminology</p>
-                        </div>
-                    </div>
-                </button>
-
-                {/* Translation Only */}
-                <button
-                    onClick={() => handleExportText('translation')}
-                    className="flex items-center justify-between p-4 border border-slate-200 rounded-lg hover:border-slate-400 hover:bg-slate-50 transition-all group"
-                >
-                    <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-slate-600" />
-                        <div className="text-left">
-                            <p className="font-medium text-slate-800">Plain Text (ZH)</p>
-                            <p className="text-xs text-slate-500">Unformatted translation</p>
-                        </div>
-                    </div>
-                </button>
-
-                {/* Bilingual */}
-                <button
-                    onClick={() => handleExportText('bilingual')}
-                    className="flex items-center justify-between p-4 border border-slate-200 rounded-lg hover:border-slate-400 hover:bg-slate-50 transition-all group"
-                >
-                    <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-slate-600" />
-                        <div className="text-left">
-                            <p className="font-medium text-slate-800">Bilingual Text (EN/ZH)</p>
-                            <p className="text-xs text-slate-500">Comparative side-by-side</p>
-                        </div>
-                    </div>
-                </button>
-
-                {/* Markdown Export (MinerU style) */}
+                {/* Markdown — Primary */}
                 <button
                     onClick={() => {
                         import('../services/exportToMarkdown').then(mod => {
                             mod.downloadAsMarkdown(translatedChunks, `translation_${Date.now()}`);
                         });
                     }}
-                    className="flex items-center justify-between p-4 border border-purple-200 bg-purple-50/50 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all group"
+                    className="flex flex-col items-center gap-2 p-5 border-2 border-purple-200 bg-purple-50/50 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all group"
                 >
-                    <div className="flex items-center gap-3">
-                        <File className="w-5 h-5 text-purple-600" />
-                        <div className="text-left">
-                            <p className="font-medium text-slate-800">Markdown (MD)</p>
-                            <p className="text-xs text-slate-500">Structured format</p>
-                        </div>
+                    <File className="w-7 h-7 text-purple-600" />
+                    <div className="text-center">
+                        <p className="font-semibold text-slate-800 text-sm">Markdown</p>
+                        <p className="text-[11px] text-slate-500">Structured</p>
                     </div>
                 </button>
 
-                {/* Original MinerU Output */}
+                {/* Smart PDF — Primary */}
                 <button
-                    onClick={handleExportOriginalMD}
-                    className="flex items-center justify-between p-4 border border-orange-200 bg-orange-50/50 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-all group"
+                    onClick={() => setShowSmartPdfModal(true)}
+                    className="flex flex-col items-center gap-2 p-5 border-2 border-violet-200 bg-gradient-to-b from-violet-50 to-purple-50 rounded-xl hover:border-violet-500 hover:shadow-lg transition-all group"
                 >
-                    <div className="flex items-center gap-3">
-                        <FileDown className="w-5 h-5 text-orange-600" />
-                        <div className="text-left">
-                            <p className="font-medium text-slate-800">Original (MinerU MD)</p>
-                            <p className="text-xs text-slate-500">Pre-translation source markdown</p>
-                        </div>
+                    <Sparkles className="w-7 h-7 text-violet-600" />
+                    <div className="text-center">
+                        <p className="font-semibold text-slate-800 text-sm">Smart PDF</p>
+                        <p className="text-[11px] text-slate-500">Preview + Layout</p>
                     </div>
                 </button>
             </div>
 
-            <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3">
-                <span className="text-lg">💡</span>
-                <p className="text-xs text-amber-800 leading-relaxed">
-                    <strong>Pro Tip:</strong> Re-import the "New Terms" CSV back into Standard Linguist later to refine your domain glossary.
-                    This creates a virtuous cycle of terminology improvement!
-                </p>
-            </div>
-
-            {/* Smart PDF Export Button - Full Width */}
+            {/* More Formats Toggle */}
             <button
-                onClick={() => setShowSmartPdfModal(true)}
-                className="mt-4 w-full flex items-center justify-center gap-3 p-4 border-2 border-violet-300 bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl hover:border-violet-500 hover:shadow-lg transition-all group"
+                onClick={() => setShowMoreFormats(!showMoreFormats)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-sm text-slate-500 hover:text-slate-700 border border-dashed border-slate-200 rounded-lg hover:border-slate-300 hover:bg-slate-50 transition-all"
             >
-                <Sparkles className="w-6 h-6 text-violet-600" />
-                <div className="text-left">
-                    <p className="font-semibold text-violet-800">Smart PDF Export</p>
-                    <p className="text-xs text-violet-600">Preview with pagination • Bilingual mode • Advanced layout</p>
-                </div>
+                {showMoreFormats ? '▲ Hide' : '▼ Show'} more formats
+                <span className="text-xs text-slate-400">(Plain Text, Bilingual, Original, New Terms)</span>
             </button>
+
+            {/* Expanded: More Formats */}
+            {showMoreFormats && (
+                <div className="grid md:grid-cols-2 gap-3 mt-3">
+                    {/* New Terms */}
+                    <button
+                        onClick={handleExportNewTerms}
+                        className="flex items-center justify-between p-4 border border-emerald-200 bg-emerald-50/50 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
+                    >
+                        <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-emerald-600" />
+                            <div className="text-left">
+                                <p className="font-medium text-slate-800 text-sm">New Terms (CSV)</p>
+                                <p className="text-xs text-slate-500">Discovered terminology</p>
+                            </div>
+                        </div>
+                    </button>
+
+                    {/* Plain Text */}
+                    <button
+                        onClick={() => handleExportText('translation')}
+                        className="flex items-center justify-between p-4 border border-slate-200 rounded-lg hover:border-slate-400 hover:bg-slate-50 transition-all group"
+                    >
+                        <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-slate-600" />
+                            <div className="text-left">
+                                <p className="font-medium text-slate-800 text-sm">Plain Text (ZH)</p>
+                                <p className="text-xs text-slate-500">Unformatted</p>
+                            </div>
+                        </div>
+                    </button>
+
+                    {/* Bilingual */}
+                    <button
+                        onClick={() => handleExportText('bilingual')}
+                        className="flex items-center justify-between p-4 border border-slate-200 rounded-lg hover:border-slate-400 hover:bg-slate-50 transition-all group"
+                    >
+                        <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-slate-600" />
+                            <div className="text-left">
+                                <p className="font-medium text-slate-800 text-sm">Bilingual (EN/ZH)</p>
+                                <p className="text-xs text-slate-500">Side-by-side</p>
+                            </div>
+                        </div>
+                    </button>
+
+                    {/* Original MinerU */}
+                    <button
+                        onClick={handleExportOriginalMD}
+                        className="flex items-center justify-between p-4 border border-orange-200 bg-orange-50/50 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-all group"
+                    >
+                        <div className="flex items-center gap-3">
+                            <FileDown className="w-5 h-5 text-orange-600" />
+                            <div className="text-left">
+                                <p className="font-medium text-slate-800 text-sm">Original (MinerU MD)</p>
+                                <p className="text-xs text-slate-500">Pre-translation source</p>
+                            </div>
+                        </div>
+                    </button>
+                </div>
+            )}
 
             {/* Smart PDF Modal */}
             <PrintExportModal

@@ -724,6 +724,53 @@ def build_skeleton_and_dict(
         else:
             i += 1
 
+    # --- Sub-pass C: HEADER short-chunk grouping ---
+    # Adjacent short HEADER chunks (e.g. "1. Scope", "1.1 Purpose") are grouped
+    # into one chunk joined by " / " to reduce review queue noise.
+    MIN_HEADER_WORDS = 5
+    HEADER_GROUP_SEP = ' / '
+
+    tags = list(chunk_dict.keys())  # refresh
+    i = 0
+    while i < len(tags) - 1:
+        tag = tags[i]
+        text = chunk_dict.get(tag)
+        if text is None or chunk_types.get(tag) != NodeType.HEADER:
+            i += 1
+            continue
+        word_count = len(text.split())
+        if word_count >= MIN_HEADER_WORDS:
+            i += 1
+            continue
+
+        # Start building a group from this tag
+        group_tags = [tag]
+        group_text = text
+        j = i + 1
+        while j < len(tags):
+            next_tag = tags[j]
+            next_text = chunk_dict.get(next_tag, "")
+            if (
+                chunk_types.get(next_tag) != NodeType.HEADER
+                or len(next_text.split()) >= MIN_HEADER_WORDS
+            ):
+                break
+            candidate = group_text + HEADER_GROUP_SEP + next_text
+            if len(candidate) > MAX_MERGE_CHARS:
+                break
+            group_text = candidate
+            group_tags.append(next_tag)
+            j += 1
+
+        if len(group_tags) > 1:
+            chunk_dict[tag] = group_text
+            for merged_tag in group_tags[1:]:
+                del chunk_dict[merged_tag]
+                del chunk_types[merged_tag]
+                tags.remove(merged_tag)
+        else:
+            i += 1
+
     skeleton = ast.render()
 
     # --- Skeleton cleanup for merged/orphaned tags ---

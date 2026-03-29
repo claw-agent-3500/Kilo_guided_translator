@@ -71,23 +71,29 @@ export default function TranslationPanel({ chunks, isTranslating = false }: Tran
 
         // Apply term highlighting
         if (matches.length > 0) {
-            // For translation, we need to match the Chinese terms
             const termsToHighlight = isTranslation
                 ? matches.map(m => ({ term: m.chinese, tooltip: m.english, type: m.source }))
                 : matches.map(m => ({ term: m.english, tooltip: m.chinese, type: m.source }));
 
-            // Sort by length descending to avoid partial matches inside longer matches
             const sortedTerms = [...new Set(termsToHighlight)].sort((a, b) => b.term.length - a.term.length);
 
             for (const item of sortedTerms) {
                 const escapedTerm = escapeHtml(item.term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 const regex = new RegExp(escapedTerm, 'g');
-
                 const colorClass = item.type === 'glossary' ? 'term-match-glossary' : 'term-match-new';
-
-                // Use a temporary placeholder to avoid double-highlighting
                 result = result.replace(regex, `<mark class="term-match ${colorClass}" title="${escapeHtml(item.tooltip)}">${item.term}</mark>`);
             }
+        }
+
+        // Apply search highlighting (on top of term highlighting)
+        if (searchQuery.trim()) {
+            const q = escapeHtml(searchQuery.trim()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const searchRegex = new RegExp(`(${q})`, 'gi');
+            // Only highlight text content, not inside HTML tags
+            result = result.replace(/>([^<]+)</g, (_match, textContent) => {
+                const highlighted = textContent.replace(searchRegex, '<mark class="bg-yellow-200 text-yellow-900 rounded px-0.5">$1</mark>');
+                return `>${highlighted}<`;
+            });
         }
 
         // Finally, restore images from placeholders
@@ -170,7 +176,17 @@ export default function TranslationPanel({ chunks, isTranslating = false }: Tran
                     </select>
                     {searchQuery && (
                         <span className="text-xs text-slate-500 whitespace-nowrap">
-                            {filteredChunks.length}/{chunks.length}
+                            {filteredChunks.length} of {chunks.length} chunks
+                        </span>
+                    )}
+                    {searchQuery && filteredChunks.length > 0 && (
+                        <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                            {filteredChunks.reduce((sum, c) => {
+                                const q = searchQuery.toLowerCase();
+                                const inOriginal = (c.text.toLowerCase().match(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+                                const inTranslation = (c.translation.toLowerCase().match(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+                                return sum + inOriginal + inTranslation;
+                            }, 0)} matches
                         </span>
                     )}
                 </div>

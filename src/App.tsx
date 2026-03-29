@@ -10,8 +10,8 @@ import EditingInterface from './components/EditingInterface';
 import RefinementSuggestions from './components/RefinementSuggestions';
 import UserGlossaryPanel from './components/UserGlossaryPanel';
 import SavedProjectsPanel from './components/SavedProjectsPanel';
-import GlossaryManager from './components/GlossaryManager';
 import ReviewQueue from './components/ReviewQueue';
+import UnifiedGlossaryPanel from './components/UnifiedGlossaryPanel';
 import ResumeModal from './components/ResumeModal';
 import DeveloperPanel from './components/DeveloperPanel';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -27,7 +27,7 @@ import { exportMarkdown, getDocumentChunks, type BackendChunk } from './services
 import ApiKeyManager from './components/ApiKeyManager';
 import type { GlossaryEntry, TranslatedChunk, TranslationProgress, AppStatus, Chunk, Project, TokenUsage } from './types';
 import TokenStats from './components/TokenStats';
-import { Book, FileText, Settings, AlertTriangle, Wrench, ClipboardCheck, CheckCircle, ChevronRight, Key, FolderOpen, Download } from 'lucide-react';
+import { Book, FileText, Settings, AlertTriangle, ClipboardCheck, CheckCircle, ChevronRight, Key, FolderOpen, Download, BookOpen } from 'lucide-react';
 
 // Pipeline steps for the wizard-like UI
 type PipelineStep = 'setup' | 'translate' | 'review' | 'export';
@@ -60,10 +60,11 @@ export default function App() {
     const [pendingFile, setPendingFile] = useState<{ file: File, text: string } | null>(null);
     const [warningMessage, setWarningMessage] = useState<string | null>(null);
     const [showProjectsPanel, setShowProjectsPanel] = useState(false);
-    const [showToolsPanel, setShowToolsPanel] = useState(false);
-    const [activeToolTab, setActiveToolTab] = useState<'glossary' | 'review'>('glossary');
+    const [showGlossaryPanel, setShowGlossaryPanel] = useState(false);
+    const [showReviewPanel, setShowReviewPanel] = useState(false);
     const [loadedDocument, setLoadedDocument] = useState<import('./types').DocumentStructure | null>(null);
     const [showUsePaidButton, setShowUsePaidButton] = useState(false);
+    const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
     // Token Usage Tracking
     const [sessionTokenUsage, setSessionTokenUsage] = useState<TokenUsage>({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
@@ -318,6 +319,7 @@ export default function App() {
                     matchedTerms: chunkResult.matchedTerms
                 };
                 await storageService.saveChunks([chunkData]);
+                setLastSaved(new Date());
             }
         });
 
@@ -485,11 +487,12 @@ export default function App() {
     // Keyboard shortcuts
     useKeyboardShortcuts({
         'Escape': () => {
-            if (showToolsPanel) setShowToolsPanel(false);
+            if (showGlossaryPanel) setShowGlossaryPanel(false);
+            else if (showReviewPanel) setShowReviewPanel(false);
             else if (showProjectsPanel) setShowProjectsPanel(false);
             else if (showResumeModal) setShowResumeModal(false);
         },
-    }, [showToolsPanel, showProjectsPanel, showResumeModal]);
+    }, [showGlossaryPanel, showReviewPanel, showProjectsPanel, showResumeModal]);
 
     // Derived state for the pipeline
     const activeStep = getActiveStep(status, editMode, reviewComplete, translatedChunks);
@@ -529,6 +532,11 @@ export default function App() {
                                 <span className="text-xs font-semibold text-blue-700 truncate max-w-[150px]">
                                     {currentProject.standardTitle}
                                 </span>
+                                {lastSaved && (
+                                    <span className="text-[10px] text-emerald-600 flex items-center gap-0.5">
+                                        <CheckCircle className="w-3 h-3" /> Saved
+                                    </span>
+                                )}
                             </div>
                         )}
 
@@ -541,13 +549,22 @@ export default function App() {
                             <FolderOpen className="w-5 h-5" />
                         </button>
 
-                        {/* Tools */}
+                        {/* Glossary */}
                         <button
-                            onClick={() => setShowToolsPanel(true)}
+                            onClick={() => setShowGlossaryPanel(true)}
                             className="p-2 text-slate-500 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
-                            title="Tools (Glossary & Review)"
+                            title="Glossary"
                         >
-                            <Wrench className="w-5 h-5" />
+                            <BookOpen className="w-5 h-5" />
+                        </button>
+
+                        {/* Review */}
+                        <button
+                            onClick={() => setShowReviewPanel(true)}
+                            className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                            title="Review Queue"
+                        >
+                            <ClipboardCheck className="w-5 h-5" />
                         </button>
 
                         {/* API Key Manager */}
@@ -707,11 +724,32 @@ export default function App() {
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
                                         <FileText className="w-5 h-5 text-blue-600" />
-                                        Document Ready ({chunks.length} chunks parsed)
+                                        Document Ready ({chunks.length} chunks)
                                     </h3>
                                     {hasApiKeys && (
                                         <span className="text-sm text-emerald-600 font-medium flex items-center gap-1">
                                             <CheckCircle className="w-4 h-4" /> Ready to translate
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Chunk Stats Bar */}
+                                <div className="flex flex-wrap items-center gap-3 mb-4 text-xs text-slate-500">
+                                    <span className="bg-slate-100 px-2.5 py-1 rounded-full font-medium">
+                                        ~{chunks.reduce((sum, c) => sum + c.text.split(/\s+/).length, 0).toLocaleString()} words
+                                    </span>
+                                    {['heading', 'paragraph', 'list', 'table'].map(type => {
+                                        const count = chunks.filter(c => c.type === type).length;
+                                        if (count === 0) return null;
+                                        return (
+                                            <span key={type} className="bg-slate-100 px-2.5 py-1 rounded-full">
+                                                {count} {type}{count !== 1 ? 's' : ''}
+                                            </span>
+                                        );
+                                    })}
+                                    {loadedDocument && (
+                                        <span className="bg-slate-100 px-2.5 py-1 rounded-full">
+                                            {loadedDocument.pages} page{loadedDocument.pages !== 1 ? 's' : ''}
                                         </span>
                                     )}
                                 </div>
@@ -925,53 +963,28 @@ export default function App() {
                 currentProjectId={currentProject?.id}
             />
 
-            {/* Tools Panel */}
-            {showToolsPanel && (
+            {/* Unified Glossary Panel */}
+            <UnifiedGlossaryPanel
+                isOpen={showGlossaryPanel}
+                onClose={() => setShowGlossaryPanel(false)}
+                onGlossaryLoaded={handleGlossaryLoaded}
+                currentGlossary={glossary}
+            />
+
+            {/* Review Panel */}
+            {showReviewPanel && (
                 <div className="fixed inset-0 z-50 flex">
-                    <div
-                        className="absolute inset-0 bg-black/50"
-                        onClick={() => setShowToolsPanel(false)}
-                    />
-                    <div className="absolute right-0 top-0 h-full w-full max-w-xl bg-slate-900 shadow-2xl overflow-y-auto">
-                        <div className="sticky top-0 bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between">
+                    <div className="absolute inset-0 bg-black/50" onClick={() => setShowReviewPanel(false)} />
+                    <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-slate-900 shadow-2xl overflow-y-auto">
+                        <div className="sticky top-0 bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between z-10">
                             <div className="flex items-center gap-3">
-                                <Wrench className="w-6 h-6 text-violet-400" />
-                                <h2 className="text-xl font-bold text-white">Tools</h2>
+                                <ClipboardCheck className="w-6 h-6 text-emerald-400" />
+                                <h2 className="text-xl font-bold text-white">Review Queue</h2>
                             </div>
-                            <button
-                                onClick={() => setShowToolsPanel(false)}
-                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                        <div className="flex border-b border-slate-700">
-                            <button
-                                onClick={() => setActiveToolTab('glossary')}
-                                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 font-medium transition-colors ${
-                                    activeToolTab === 'glossary'
-                                        ? 'text-violet-400 border-b-2 border-violet-400 bg-slate-800/50'
-                                        : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                                }`}
-                            >
-                                <Book className="w-4 h-4" />
-                                Glossary
-                            </button>
-                            <button
-                                onClick={() => setActiveToolTab('review')}
-                                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 font-medium transition-colors ${
-                                    activeToolTab === 'review'
-                                        ? 'text-violet-400 border-b-2 border-violet-400 bg-slate-800/50'
-                                        : 'text-slate-400 hover:text-white hover:bg-slate-800/30'
-                                }`}
-                            >
-                                <ClipboardCheck className="w-4 h-4" />
-                                Review Queue
-                            </button>
+                            <button onClick={() => setShowReviewPanel(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800">✕</button>
                         </div>
                         <div className="p-4">
-                            {activeToolTab === 'glossary' && <GlossaryManager />}
-                            {activeToolTab === 'review' && <ReviewQueue />}
+                            <ReviewQueue />
                         </div>
                     </div>
                 </div>
