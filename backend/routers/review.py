@@ -1,18 +1,14 @@
 """
 Review Router - API endpoints for iterative translation review workflow.
-
-Endpoints:
-- GET /review/queue - List nodes needing review
-- GET /review/stats/{doc_id} - Get document translation stats
-- POST /review/{node_id}/approve - Approve a translation
-- POST /review/{node_id}/edit - Edit and approve translation
-- POST /review/{node_id}/retranslate - Queue for re-translation
 """
 
+import logging
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from services.database import get_database, NodeState
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/review", tags=["review"])

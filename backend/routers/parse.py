@@ -2,13 +2,21 @@
 Document Parsing Router - PDF and Markdown parsing endpoints.
 """
 
+import logging
+import traceback
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from models.responses import ParseResult, DocumentStructure
 from services.mineru_service import extract_with_mineru, is_mineru_configured
 from services.markdown_handler import build_skeleton_and_dict
 from services.database import get_database
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Limits
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MINERU_SIZE_LIMIT = 30 * 1024 * 1024  # 30MB
 
 
 def _ingest_document_skeleton(doc_id: int, markdown_text: str) -> int:
@@ -68,13 +76,13 @@ async def parse_pdf(
         )
     
     try:
-        print(f"[Parse] PDF Upload received: {file.filename}, use_mineru={use_mineru}")
-        print(f"[Parse] File size: {file_size_mb:.2f} MB")
+        logger.info(f"[Parse] PDF Upload received: {file.filename}, use_mineru={use_mineru}")
+        logger.info(f"[Parse] File size: {file_size_mb:.2f} MB")
         
         if use_mineru:
-            print(f"[Parse] Checking MinerU configuration...")
+            logger.info(f"[Parse] Checking MinerU configuration...")
             configured = is_mineru_configured()
-            print(f"[Parse] MinerU configured: {configured}")
+            logger.info(f"[Parse] MinerU configured: {configured}")
             
             if not configured:
                 raise HTTPException(
@@ -82,9 +90,9 @@ async def parse_pdf(
                     detail="MinerU API key not configured. Set via /api/keys endpoint."
                 )
             
-            print(f"[Parse] Calling extract_with_mineru...")
+            logger.info(f"[Parse] Calling extract_with_mineru...")
             document = await extract_with_mineru(content, file.filename)
-            print(f"[Parse] Extraction successful! Text length: {len(document.text)}")
+            logger.info(f"[Parse] Extraction successful! Text length: {len(document.text)}")
         else:
             # Fallback: basic text extraction without MinerU
             raise HTTPException(
@@ -102,7 +110,7 @@ async def parse_pdf(
             language=document.language,
         )
         node_count = _ingest_document_skeleton(doc_id, document.text)
-        print(f"[Parse] Skeleton stored: doc_id={doc_id}, nodes={node_count}")
+        logger.info(f"[Parse] Skeleton stored: doc_id={doc_id}, nodes={node_count}")
 
         return ParseResult(success=True, document=document, doc_id=doc_id)
     
@@ -111,8 +119,8 @@ async def parse_pdf(
     except Exception as e:
         import traceback
         error_msg = str(e)
-        print(f"[Parse] ERROR during PDF parsing: {error_msg}")
-        print(f"[Parse] Full traceback:\n{traceback.format_exc()}")
+        logger.info(f"[Parse] ERROR during PDF parsing: {error_msg}")
+        logger.info(f"[Parse] Full traceback:\n{traceback.format_exc()}")
         
         # Improve error message for common MinerU errors
         if "413" in error_msg:
@@ -171,7 +179,7 @@ async def parse_markdown(file: UploadFile = File(...)):
             language=language,
         )
         node_count = _ingest_document_skeleton(doc_id, text)
-        print(f"[Parse] Markdown skeleton stored: doc_id={doc_id}, nodes={node_count}")
+        logger.info(f"[Parse] Markdown skeleton stored: doc_id={doc_id}, nodes={node_count}")
 
         return ParseResult(success=True, document=document, doc_id=doc_id)
     

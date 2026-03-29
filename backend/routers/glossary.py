@@ -1,24 +1,18 @@
 """
 Glossary Router - CSV upload and term management for consistent translations.
-
-Endpoints:
-- POST /glossary/upload - Upload CSV file
-- GET /glossary - List all terms
-- GET /glossary/{id} - Get single term
-- POST /glossary - Create term
-- PUT /glossary/{id} - Update term
-- DELETE /glossary/{id} - Delete term
-- DELETE /glossary/clear - Clear all terms
 """
 
 import csv
 import io
+import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 import sqlite3
 from contextlib import contextmanager
 import os
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/glossary", tags=["glossary"])

@@ -2,10 +2,9 @@
 Translation Router - Single chunk and batch translation with SSE streaming.
 """
 
-import json
+import logging
 import asyncio
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
 from models.requests import TranslateChunkRequest, TranslateBatchRequest
@@ -13,28 +12,28 @@ from models.responses import TranslatedChunk, TranslationProgress
 from services.gemini_service import translate_chunk
 from routers.keys import get_current_gemini_key
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Limits
+MAX_BATCH_SIZE = 500  # Maximum chunks per batch request
+MAX_CHUNK_CONTENT_LENGTH = 50_000  # Maximum chars per chunk
 
 
 @router.post("/chunk", response_model=TranslatedChunk)
 async def translate_single_chunk(request: TranslateChunkRequest):
     """
     Translate a single chunk with glossary constraints.
-    
-    - **chunk**: The text chunk to translate
-    - **glossary**: List of term mappings to enforce
     """
     if not get_current_gemini_key():
-        raise HTTPException(
-            status_code=400,
-            detail="No Gemini API key configured. Set via /api/keys endpoint."
-        )
+        raise HTTPException(status_code=400, detail="No Gemini API key configured. Set via /api/keys endpoint.")
+    
+    if len(request.chunk.content) > MAX_CHUNK_CONTENT_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Chunk content too large ({len(request.chunk.content)} chars, max {MAX_CHUNK_CONTENT_LENGTH})")
     
     try:
-        result = await translate_chunk(
-            chunk=request.chunk,
-            glossary=request.glossary
-        )
+        result = await translate_chunk(chunk=request.chunk, glossary=request.glossary)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -44,95 +43,66 @@ async def translate_single_chunk(request: TranslateChunkRequest):
 async def translate_batch(request: TranslateBatchRequest):
     """
     Batch translate multiple chunks with SSE streaming progress.
-    
-    Returns a Server-Sent Events stream with real-time progress updates.
-    
-    Events:
-    - `progress`: Progress update with current/total
-    - `chunk_complete`: A chunk finished translating
-    - `error`: An error occurred
-    - `done`: All chunks completed
     """
     if not get_current_gemini_key():
-        raise HTTPException(
-            status_code=400,
-            detail="No Gemini API key configured. Set via /api/keys endpoint."
-        )
+        raise HTTPException(status_code=400, detail="No Gemini API key configured. Set via /api/keys endpoint.")
+    
+    if len(request.chunks) > MAX_BATCH_SIZE:
+        raise HTTPException(status_code=400, detail=f"Batch too large ({len(request.chunks)} chunks, max {MAX_BATCH_SIZE})")
+    
+    for chunk in request.chunks:
+        if len(chunk.content) > MAX_CHUNK_CONTENT_LENGTH:
+            raise HTTPException(status_code=400, detail=f"Chunk {chunk.id} too large ({len(chunk.content)} chars)")
     
     async def event_generator():
         """Generate SSE events for translation progress."""
         total = len(request.chunks)
-        translated_chunks = []
         
-        print(f"[DEBUG SSE] Starting translation of {total} chunks")
+        logger.info(f"Starting batch translation: {total} chunks")
         
         for i, chunk in enumerate(request.chunks):
             try:
-                print(f"[DEBUG SSE] Translating chunk {i+1}/{total}: {chunk.id}")
-                
-                # Send progress event
-                progress = TranslationProgress(
-                    event="progress",
-                    chunk_id=chunk.id,
-                    current=i,
-                    total=total
-                )
+                # Progress event
                 yield {
                     "event": "progress",
-                    "data": progress.model_dump_json()
+                    "data": TranslationProgress(
+                        event="progress", chunk_id=chunk.id, current=i, total=total
+                    ).model_dump_json()
                 }
                 
-                # Translate the chunk
-                result = await translate_chunk(
-                    chunk=chunk,
-                    glossary=request.glossary
-                )
-                translated_chunks.append(result)
+                # Translate
+                result = await translate_chunk(chunk=chunk, glossary=request.glossary)
                 
-                print(f"[DEBUG SSE] Chunk {i+1}/{total} translated successfully")
+                logger.debug(f"Chunk {i+1}/{total} translated: {chunk.id}")
                 
-                # Send chunk complete event
-                complete = TranslationProgress(
-                    event="chunk_complete",
-                    chunk_id=chunk.id,
-                    current=i + 1,
-                    total=total,
-                    translated_chunk=result
-                )
+                # Chunk complete event
                 yield {
                     "event": "chunk_complete",
-                    "data": complete.model_dump_json()
+                    "data": TranslationProgress(
+                        event="chunk_complete", chunk_id=chunk.id,
+                        current=i + 1, total=total, translated_chunk=result
+                    ).model_dump_json()
                 }
                 
-                # Small delay to avoid rate limiting
+                # Rate limiting delay
                 await asyncio.sleep(0.3)
                 
             except Exception as e:
-                print(f"[DEBUG SSE] Error translating chunk {i+1}: {str(e)}")
-                # Send error event
-                error = TranslationProgress(
-                    event="error",
-                    chunk_id=chunk.id,
-                    current=i,
-                    total=total,
-                    error_message=str(e)
-                )
+                logger.error(f"Error translating chunk {chunk.id}: {e}")
                 yield {
                     "event": "error",
-                    "data": error.model_dump_json()
+                    "data": TranslationProgress(
+                        event="error", chunk_id=chunk.id,
+                        current=i, total=total, error_message=str(e)
+                    ).model_dump_json()
                 }
-                # Continue with next chunk instead of stopping
         
-        # Send done event
-        done = TranslationProgress(
-            event="done",
-            current=total,
-            total=total
-        )
+        # Done event
         yield {
             "event": "done",
-            "data": done.model_dump_json()
+            "data": TranslationProgress(event="done", current=total, total=total).model_dump_json()
         }
+        logger.info(f"Batch translation complete: {total} chunks")
     
     return EventSourceResponse(event_generator())
 
@@ -141,35 +111,23 @@ async def translate_batch(request: TranslateBatchRequest):
 async def translate_batch_sync(request: TranslateBatchRequest):
     """
     Batch translate multiple chunks synchronously (no streaming).
-    
-    Use /batch for real-time progress updates via SSE.
     """
     if not get_current_gemini_key():
-        raise HTTPException(
-            status_code=400,
-            detail="No Gemini API key configured. Set via /api/keys endpoint."
-        )
+        raise HTTPException(status_code=400, detail="No Gemini API key configured.")
+    
+    if len(request.chunks) > MAX_BATCH_SIZE:
+        raise HTTPException(status_code=400, detail=f"Batch too large ({len(request.chunks)} chunks, max {MAX_BATCH_SIZE})")
     
     results = []
-    
     for chunk in request.chunks:
         try:
-            result = await translate_chunk(
-                chunk=chunk,
-                glossary=request.glossary
-            )
+            result = await translate_chunk(chunk=chunk, glossary=request.glossary)
             results.append(result)
-            
-            # Rate limiting delay
             await asyncio.sleep(0.5)
-            
         except Exception as e:
-            # Create error result
             results.append(TranslatedChunk(
-                id=chunk.id,
-                original=chunk.content,
-                translated=f"[Translation Error: {e}]",
-                terms_used=[]
+                id=chunk.id, original=chunk.content,
+                translated=f"[Translation Error: {e}]", terms_used=[]
             ))
     
     return results

@@ -1,19 +1,13 @@
 """
 MinerU Service - PDF to Markdown extraction.
 Based on official MinerU API documentation.
-
-Flow:
-1. POST /file-urls/batch → get batch_id + upload_url
-2. PUT upload_url with file data
-3. GET /extract-results/batch/{batch_id} → poll until extract_result exists
-4. Download full_zip_url → extract markdown from ZIP
 """
 
+import logging
 import httpx
 import requests
 import asyncio
 import uuid
-import json
 import io
 import zipfile
 import tempfile
@@ -22,19 +16,14 @@ from typing import Optional, Callable
 from config import settings
 from models.responses import DocumentStructure
 
-
-def log(msg: str):
-    """Debug logger with timestamp."""
-    import datetime
-    ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts}] [MinerU] {msg}")
+logger = logging.getLogger(__name__)
 
 
 def is_mineru_configured() -> bool:
     """Check if MinerU API key is configured."""
     api_key = getattr(settings, 'mineru_api_key', '')
     configured = bool(api_key)
-    log(f"Config check - api_key: {'SET' if configured else 'NOT SET'}")
+    logger.info(f"Config check - api_key: {'SET' if configured else 'NOT SET'}")
     return configured
 
 
@@ -47,7 +36,7 @@ async def get_upload_url(filename: str) -> tuple[str, str]:
     """
     data_id = str(uuid.uuid4())[:8]
     
-    log(f"Step 1: Requesting upload URL for: {filename}")
+    logger.info(f"Step 1: Requesting upload URL for: {filename}")
     
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
@@ -62,13 +51,13 @@ async def get_upload_url(filename: str) -> tuple[str, str]:
             }
         )
         
-        log(f"Response status: {response.status_code}")
+        logger.info(f"Response status: {response.status_code}")
         
         if response.status_code != 200:
             raise Exception(f"MinerU API error: {response.status_code} - {response.text[:200]}")
         
         result = response.json()
-        log(f"Response: code={result.get('code')}, msg={result.get('msg')}")
+        logger.info(f"Response: code={result.get('code')}, msg={result.get('msg')}")
         
         if result.get("code") != 0:
             raise Exception(f"MinerU error: {result.get('msg')}")
@@ -76,8 +65,8 @@ async def get_upload_url(filename: str) -> tuple[str, str]:
         batch_id = result["data"]["batch_id"]
         upload_url = result["data"]["file_urls"][0]
         
-        log(f"Got batch_id: {batch_id}")
-        log(f"Got upload_url: {upload_url[:80]}...")
+        logger.info(f"Got batch_id: {batch_id}")
+        logger.info(f"Got upload_url: {upload_url[:80]}...")
         
         return batch_id, upload_url
 
@@ -90,7 +79,7 @@ async def upload_file(upload_url: str, file_content: bytes, filename: str) -> No
     Uses temp file + open() pattern from official example.
     """
     file_size_mb = len(file_content) / (1024 * 1024)
-    log(f"Step 2: Uploading {filename} ({file_size_mb:.2f} MB)")
+    logger.info(f"Step 2: Uploading {filename} ({file_size_mb:.2f} MB)")
     
     # Save to temp file (matching official example pattern)
     temp_path = None
@@ -107,12 +96,12 @@ async def upload_file(upload_url: str, file_content: bytes, filename: str) -> No
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, _upload)
         
-        log(f"Upload response status: {response.status_code}")
+        logger.info(f"Upload response status: {response.status_code}")
         
         if response.status_code != 200:
             raise Exception(f"Upload failed: {response.status_code}")
         
-        log("Upload successful!")
+        logger.info("Upload successful!")
         
     finally:
         if temp_path and os.path.exists(temp_path):
@@ -133,7 +122,7 @@ async def poll_task_status(batch_id: str, on_progress: Optional[Callable[[int], 
     max_wait = 600
     elapsed = 0
     
-    log(f"Step 3: Polling batch status for: {batch_id}")
+    logger.info(f"Step 3: Polling batch status for: {batch_id}")
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         while elapsed < max_wait:
@@ -143,7 +132,7 @@ async def poll_task_status(batch_id: str, on_progress: Optional[Callable[[int], 
             )
             
             if response.status_code != 200:
-                log(f"Poll error: {response.status_code}")
+                logger.info(f"Poll error: {response.status_code}")
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
                 continue
@@ -151,7 +140,7 @@ async def poll_task_status(batch_id: str, on_progress: Optional[Callable[[int], 
             result = response.json()
             
             if result.get("code") != 0:
-                log(f"API error: {result.get('msg')}")
+                logger.info(f"API error: {result.get('msg')}")
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
                 continue
@@ -159,7 +148,7 @@ async def poll_task_status(batch_id: str, on_progress: Optional[Callable[[int], 
             data = result.get("data", {})
             extract_result = data.get("extract_result", [])
             
-            log(f"Polling... extract_result count: {len(extract_result)}")
+            logger.info(f"Polling... extract_result count: {len(extract_result)}")
             
             if on_progress:
                 on_progress(30 + min(50, elapsed // 5))
@@ -168,16 +157,16 @@ async def poll_task_status(batch_id: str, on_progress: Optional[Callable[[int], 
                 first = extract_result[0]
                 state = first.get("state", "unknown")
                 
-                log(f"Task state: {state}")
+                logger.info(f"Task state: {state}")
                 
                 if state == "done":
                     zip_url = first.get("full_zip_url")
                     if zip_url:
-                        log(f"Task complete! ZIP URL: {zip_url[:80]}...")
+                        logger.info(f"Task complete! ZIP URL: {zip_url[:80]}...")
                         return zip_url
                     else:
                         # Try alternative field names
-                        log(f"Result keys: {first.keys()}")
+                        logger.info(f"Result keys: {first.keys()}")
                         raise Exception("Task done but no ZIP URL found")
                 
                 if state == "failed":
@@ -198,7 +187,7 @@ async def download_and_extract_markdown(zip_url: str) -> str:
     Step 4: Download ZIP and extract markdown content.
     MinerU returns results in a ZIP file containing .md files.
     """
-    log(f"Step 4: Downloading results from ZIP...")
+    logger.info(f"Step 4: Downloading results from ZIP...")
     
     async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
         response = await client.get(zip_url)
@@ -206,22 +195,22 @@ async def download_and_extract_markdown(zip_url: str) -> str:
         if response.status_code != 200:
             raise Exception(f"Failed to download ZIP: {response.status_code}")
         
-        log(f"Downloaded ZIP: {len(response.content)} bytes")
+        logger.info(f"Downloaded ZIP: {len(response.content)} bytes")
         
         # Extract markdown from ZIP
         zip_buffer = io.BytesIO(response.content)
         
         with zipfile.ZipFile(zip_buffer, 'r') as zf:
             file_list = zf.namelist()
-            log(f"ZIP contains: {file_list}")
+            logger.info(f"ZIP contains: {file_list}")
             
             # Find markdown file(s)
             md_files = [f for f in file_list if f.endswith('.md')]
             
             if not md_files:
-                log(f"No .md files found, looking for alternatives...")
+                logger.info(f"No .md files found, looking for alternatives...")
                 for name in file_list:
-                    log(f"  - {name}")
+                    logger.info(f"  - {name}")
                 raise Exception("No markdown file found in ZIP")
             
             # Read the main markdown file
@@ -229,7 +218,7 @@ async def download_and_extract_markdown(zip_url: str) -> str:
             for md_file in md_files:
                 content = zf.read(md_file).decode('utf-8')
                 markdown_content += content + "\n\n"
-                log(f"Extracted {md_file}: {len(content)} chars")
+                logger.info(f"Extracted {md_file}: {len(content)} chars")
             
             return markdown_content.strip()
 
@@ -296,7 +285,7 @@ def convert_html_tables_to_markdown(content: str) -> str:
     original_count = len(re.findall(r'<table', content, re.IGNORECASE))
     remaining_count = len(re.findall(r'<table', result, re.IGNORECASE))
     if original_count > 0:
-        log(f"Converted {original_count - remaining_count}/{original_count} HTML tables to Markdown")
+        logger.info(f"Converted {original_count - remaining_count}/{original_count} HTML tables to Markdown")
 
     # Unescape any residual HTML entities in non-table text that MinerU may
     # have encoded (e.g. bare &lt; in paragraph text, &amp; in formulae, etc.)
@@ -321,10 +310,10 @@ async def extract_with_mineru(
     3. Poll for completion
     4. Download and extract markdown from ZIP
     """
-    log("="*60)
-    log(f"EXTRACT_WITH_MINERU: {filename}")
-    log(f"File size: {len(file_content)/1024/1024:.2f} MB")
-    log("="*60)
+    logger.info("="*60)
+    logger.info(f"EXTRACT_WITH_MINERU: {filename}")
+    logger.info(f"File size: {len(file_content)/1024/1024:.2f} MB")
+    logger.info("="*60)
     
     if not is_mineru_configured():
         raise Exception("MinerU API key not configured")
@@ -353,7 +342,7 @@ async def extract_with_mineru(
         # Step 4.5: Convert HTML tables to Markdown
         markdown_content = convert_html_tables_to_markdown(markdown_content)
         
-        log(f"SUCCESS! Markdown length: {len(markdown_content)} chars")
+        logger.info(f"SUCCESS! Markdown length: {len(markdown_content)} chars")
         
         if on_progress:
             on_progress(100)
@@ -371,7 +360,7 @@ async def extract_with_mineru(
         )
         
     except Exception as e:
-        log(f"EXTRACTION FAILED: {e}")
+        logger.info(f"EXTRACTION FAILED: {e}")
         raise
 
 

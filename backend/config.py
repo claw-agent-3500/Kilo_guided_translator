@@ -17,12 +17,16 @@ class Settings(BaseSettings):
     mineru_api_base: str = "https://mineru.net/api/v4"
     
     # MinerU Local API URL (if running locally via Docker or pip)
-    # Set this to use local MinerU instead of cloud API
-    # Example: http://localhost:8000
     mineru_local_url: str = ""
     
     # Rate limiting
     gemini_rpm_limit: int = 15  # Requests per minute for free tier
+    
+    # Auth — optional API key to protect the backend
+    api_key: str = ""
+    
+    # CORS — comma-separated allowed origins
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:1420,http://127.0.0.1:1420,tauri://localhost"
     
     class Config:
         env_file = ".env"

@@ -3,6 +3,10 @@ PDF Export Service - Generate text-based PDFs with Chinese support.
 Uses fpdf2 with font support for CJK character rendering.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import os
 import re
 import urllib.request
@@ -22,7 +26,7 @@ def get_chinese_font_path() -> str:
     # Check for previously downloaded font
     local_font = FONTS_DIR / "chinese_font.ttf"
     if local_font.exists() and local_font.stat().st_size > 100000:
-        print(f"[PDF Export] Using local font: {local_font}")
+        logger.info(f"[PDF Export] Using local font: {local_font}")
         return str(local_font)
     
     # Windows system fonts (prefer TTF over TTC)
@@ -40,7 +44,7 @@ def get_chinese_font_path() -> str:
     
     for font_path in windows_ttf_fonts:
         if os.path.exists(font_path):
-            print(f"[PDF Export] Using system font: {font_path}")
+            logger.info(f"[PDF Export] Using system font: {font_path}")
             return font_path
     
     # Try downloading a font
@@ -52,17 +56,17 @@ def get_chinese_font_path() -> str:
     
     for url in font_urls:
         try:
-            print(f"[PDF Export] Trying to download font from: {url}")
+            logger.info(f"[PDF Export] Trying to download font from: {url}")
             urllib.request.urlretrieve(url, local_font)
             if local_font.exists() and local_font.stat().st_size > 100000:
-                print(f"[PDF Export] Font downloaded: {local_font.stat().st_size} bytes")
+                logger.info(f"[PDF Export] Font downloaded: {local_font.stat().st_size} bytes")
                 return str(local_font)
         except Exception as e:
-            print(f"[PDF Export] Font download failed: {e}")
+            logger.info(f"[PDF Export] Font download failed: {e}")
             continue
     
     # Return None - will use built-in font (ASCII only)
-    print("[PDF Export] WARNING: No Chinese font found. Using built-in font (limited to ASCII).")
+    logger.info("[PDF Export] WARNING: No Chinese font found. Using built-in font (limited to ASCII).")
     return None
 
 
@@ -84,9 +88,9 @@ class ChinesePDF(FPDF):
                 self.add_font(FONT_NAME, "", font_path, uni=True)
                 self.font_family_name = FONT_NAME
                 self.custom_font_loaded = True
-                print(f"[PDF Export] Custom font loaded: {FONT_NAME}")
+                logger.info(f"[PDF Export] Custom font loaded: {FONT_NAME}")
             except Exception as e:
-                print(f"[PDF Export] Failed to load font: {e}")
+                logger.info(f"[PDF Export] Failed to load font: {e}")
                 self.font_family_name = "Helvetica"
     
     def _safe_text(self, text: str) -> str:
@@ -251,4 +255,4 @@ if __name__ == "__main__":
     pdf_bytes = generate_translation_pdf(test_chunks, "Test Document")
     with open("test_output.pdf", "wb") as f:
         f.write(pdf_bytes)
-    print(f"Test PDF generated: test_output.pdf ({len(pdf_bytes)} bytes)")
+    logger.info(f"Test PDF generated: test_output.pdf ({len(pdf_bytes)} bytes)")

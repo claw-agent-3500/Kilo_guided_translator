@@ -1,19 +1,18 @@
 """
 Database Service - SQLite management for iterative translation workflow.
-
-Tables:
-- documents: Parsed documents
-- nodes: Text blocks with translation state
-- translations: Translation history
 """
 
+import logging
 import sqlite3
 import os
+import time
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 class NodeState(str, Enum):
@@ -59,24 +58,31 @@ class Database:
         self.db_path = db_path
         self._init_db()
     
-    def log(self, msg: str):
-        import datetime as dt
-        ts = dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        print(f"[{ts}] [DB] {msg}")
-    
     @contextmanager
-    def get_connection(self):
-        """Context manager for database connections."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            conn.close()
+    def get_connection(self, retries: int = 3, delay: float = 0.1):
+        """Context manager for database connections with retry on lock errors."""
+        last_error = None
+        for attempt in range(retries):
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=10.0)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                    conn.commit()
+                    return
+                except Exception as e:
+                    conn.rollback()
+                    raise e
+                finally:
+                    conn.close()
+            except sqlite3.OperationalError as e:
+                last_error = e
+                if "locked" in str(e).lower() and attempt < retries - 1:
+                    logger.warning(f"DB locked, retrying ({attempt+1}/{retries})...")
+                    time.sleep(delay * (attempt + 1))
+                else:
+                    raise
+        raise last_error
     
     def _init_db(self):
         """Initialize database schema."""
@@ -147,7 +153,7 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_nodes_state ON nodes(state)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_translations_node ON translations(node_id)")
             
-            self.log(f"Database initialized: {self.db_path}")
+            logger.info(f"Database initialized: {self.db_path}")
     
     # ==================== Document Operations ====================
     
@@ -167,7 +173,7 @@ class Database:
                 VALUES (?, ?, ?, ?, ?)
             """, (name, source_text, pages, word_count, language))
             doc_id = cursor.lastrowid
-            self.log(f"Created document {doc_id}: {name}")
+            logger.info(f"Created document {doc_id}: {name}")
             return doc_id
     
     def get_document(self, doc_id: int) -> Optional[Dict]:
@@ -225,7 +231,7 @@ class Database:
                     NodeState.PENDING.value
                 ))
                 node_ids.append(cursor.lastrowid)
-            self.log(f"Created {len(node_ids)} nodes for document {document_id}")
+            logger.info(f"Created {len(node_ids)} nodes for document {document_id}")
             return node_ids
     
     def get_node(self, node_id: int) -> Optional[Dict]:

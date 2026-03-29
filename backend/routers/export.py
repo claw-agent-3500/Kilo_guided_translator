@@ -2,6 +2,7 @@
 Export Router - PDF and Markdown export endpoints.
 """
 
+import logging
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -10,6 +11,8 @@ from typing import List, Optional, Literal
 from services.pdf_export import generate_translation_pdf
 from services.markdown_handler import reconstruct_from_skeleton
 from services.database import get_database
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -54,10 +57,10 @@ async def export_pdf(request: ExportPdfRequest):
             for chunk in request.chunks
         ]
         
-        print(f"[PDF Export] Generating PDF with {len(chunks_data)} chunks...")
+        logger.info(f"[PDF Export] Generating PDF with {len(chunks_data)} chunks...")
         pdf_bytes = generate_translation_pdf(chunks_data, request.title)
         
-        print(f"[PDF Export] PDF generated: {len(pdf_bytes)} bytes")
+        logger.info(f"[PDF Export] PDF generated: {len(pdf_bytes)} bytes")
         
         # Return PDF as downloadable file
         filename = f"translation_{request.title[:30].replace(' ', '_')}.pdf"
@@ -71,7 +74,7 @@ async def export_pdf(request: ExportPdfRequest):
         )
         
     except Exception as e:
-        print(f"[PDF Export] Error: {str(e)}")
+        logger.info(f"[PDF Export] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 
 
@@ -170,7 +173,7 @@ async def export_markdown(
     base_name = doc_name.rsplit(".", 1)[0] if "." in doc_name else doc_name
     filename = f"{base_name}_translated.md"
 
-    print(f"[Markdown Export] doc_id={document_id}, nodes={len(nodes)}, "
+    logger.info(f"[Markdown Export] doc_id={document_id}, nodes={len(nodes)}, "
           f"approved={sum(1 for n in nodes if n.get('state') in ('approved','completed'))}, "
           f"skeleton_len={len(skeleton)}, output_len={len(final_markdown)}")
 

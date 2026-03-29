@@ -2,16 +2,26 @@
 API Keys Router - Manage API keys at runtime.
 """
 
+import logging
 from fastapi import APIRouter
 from models.requests import SetApiKeysRequest
 from models.responses import ApiKeyStatus
 from config import settings, update_api_keys
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # In-memory storage for multiple Gemini keys
 gemini_key_pool: list[str] = []
 current_key_index: int = 0
+
+
+def _redact(key: str) -> str:
+    """Redact a key for safe logging — show only first 4 and last 4 chars."""
+    if len(key) <= 8:
+        return "****"
+    return f"{key[:4]}...{key[-4:]}"
 
 
 @router.post("", response_model=ApiKeyStatus)
@@ -24,14 +34,13 @@ async def set_api_keys(request: SetApiKeysRequest):
         current_key_index = 0
         if gemini_key_pool:
             update_api_keys(gemini_key=gemini_key_pool[0])
-        # DEBUG: Log key configuration
         for i, key in enumerate(gemini_key_pool):
-            print(f"[DEBUG KEYS] Key {i}: {key[:8]}...{key[-4:]} {'(ACTIVE)' if i == 0 else ''}")
-        print(f"[DEBUG KEYS] Total {len(gemini_key_pool)} keys configured")
+            logger.info(f"Key {i}: {_redact(key)} {'(ACTIVE)' if i == 0 else ''}")
+        logger.info(f"Total {len(gemini_key_pool)} Gemini key(s) configured")
     
     if request.mineru_key:
         update_api_keys(mineru_key=request.mineru_key)
-        print(f"[DEBUG KEYS] MinerU key configured: {request.mineru_key[:20]}...")
+        logger.info(f"MinerU key configured: {_redact(request.mineru_key)}")
     
     return ApiKeyStatus(
         gemini_configured=bool(gemini_key_pool),
@@ -52,14 +61,13 @@ async def get_key_status():
 
 def get_current_gemini_key() -> str | None:
     """Get the current active Gemini API key."""
-    key = None
     if gemini_key_pool:
         key = gemini_key_pool[current_key_index]
-        print(f"[DEBUG KEYS] Using key {current_key_index}/{len(gemini_key_pool)}: {key[:8]}...{key[-4:]}")
-    else:
-        key = settings.gemini_api_key or None
-        if key:
-            print(f"[DEBUG KEYS] Using env key: {key[:8]}...{key[-4:]}")
+        logger.debug(f"Using key {current_key_index}/{len(gemini_key_pool)}: {_redact(key)}")
+        return key
+    key = settings.gemini_api_key or None
+    if key:
+        logger.debug(f"Using env key: {_redact(key)}")
     return key
 
 
@@ -68,23 +76,20 @@ def rotate_gemini_key() -> bool:
     global current_key_index
     
     if len(gemini_key_pool) <= 1:
-        print(f"[DEBUG KEYS] Cannot rotate - only {len(gemini_key_pool)} key(s) available")
+        logger.debug(f"Cannot rotate — only {len(gemini_key_pool)} key(s) available")
         return False
     
     old_index = current_key_index
     current_key_index = (current_key_index + 1) % len(gemini_key_pool)
     new_key = gemini_key_pool[current_key_index]
     update_api_keys(gemini_key=new_key)
-    print(f"[DEBUG KEYS] ROTATED from key {old_index} to key {current_key_index}: {new_key[:8]}...{new_key[-4:]}")
+    logger.info(f"Rotated from key {old_index} to key {current_key_index}: {_redact(new_key)}")
     return True
 
 
 @router.get("/test-gemini")
 async def test_gemini_connection():
-    """
-    Test Gemini API connectivity and check for rate limiting.
-    Makes a minimal API call to verify the key works.
-    """
+    """Test Gemini API connectivity and check for rate limiting."""
     import google.generativeai as genai
     
     api_key = get_current_gemini_key()
@@ -100,12 +105,9 @@ async def test_gemini_connection():
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-2.0-flash")
         
-        # Minimal test - just list models or do a tiny generation
         response = model.generate_content(
             "Say 'OK' in one word.",
-            generation_config=genai.types.GenerationConfig(
-                max_output_tokens=5
-            )
+            generation_config=genai.types.GenerationConfig(max_output_tokens=5)
         )
         
         return {

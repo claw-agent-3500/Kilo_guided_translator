@@ -2,6 +2,7 @@
 Gemini API Service - Translation with glossary support and robust rate limiting.
 """
 
+import logging
 import google.generativeai as genai
 import asyncio
 import random
@@ -11,12 +12,7 @@ from models.requests import GlossaryEntry, Chunk
 from models.responses import TranslatedChunk, TermMatch
 from routers.keys import get_current_gemini_key, rotate_gemini_key
 
-
-def log(msg: str):
-    """Debug logger with timestamp."""
-    import datetime
-    ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts}] [Gemini] {msg}")
+logger = logging.getLogger(__name__)
 
 
 def find_relevant_terms(text: str, glossary: list[GlossaryEntry]) -> list[GlossaryEntry]:
@@ -112,7 +108,7 @@ def clean_response(text: str) -> str:
     
     for marker in leakage_markers:
         if marker in text:
-            log(f"WARNING: Prompt leakage detected: {marker}")
+            logger.warning(f" Prompt leakage detected: {marker}")
             # Try to extract actual translation after the marker
             if "\n\n" in text:
                 parts = text.split("\n\n")
@@ -211,7 +207,7 @@ async def translate_chunk(
             if on_status:
                 on_status(f"Translating chunk {chunk.id}...")
             
-            log(f"Attempt {attempt + 1}/{max_retries} for chunk {chunk.id}")
+            logger.info(f"Attempt {attempt + 1}/{max_retries} for chunk {chunk.id}")
             
             response = model.generate_content(
                 user_prompt,
@@ -226,7 +222,7 @@ async def translate_chunk(
             # Find terms used in translation
             terms_used = identify_terms_in_text(translated_text, relevant_terms)
             
-            log(f"Chunk {chunk.id} translated successfully ({len(translated_text)} chars)")
+            logger.info(f"Chunk {chunk.id} translated successfully ({len(translated_text)} chars)")
             
             return TranslatedChunk(
                 id=chunk.id,
@@ -240,7 +236,7 @@ async def translate_chunk(
             last_error = e
             error_msg = str(e).lower()
             
-            log(f"Error on attempt {attempt + 1}: {e}")
+            logger.info(f"Error on attempt {attempt + 1}: {e}")
             
             # Check for rate limit error (429)
             is_rate_limit = any(x in error_msg for x in ["429", "rate", "quota", "resource_exhausted"])
@@ -248,7 +244,7 @@ async def translate_chunk(
             if is_rate_limit:
                 # Calculate backoff delay
                 delay = calculate_backoff(attempt)
-                log(f"Rate limited! Backing off for {delay:.1f}s...")
+                logger.info(f"Rate limited! Backing off for {delay:.1f}s...")
                 
                 if on_status:
                     on_status(f"Rate limited, waiting {delay:.0f}s...")
@@ -259,7 +255,7 @@ async def translate_chunk(
                 # Try rotating to next API key
                 if rotate_gemini_key():
                     api_key = get_current_gemini_key()
-                    log(f"Rotated to new API key")
+                    logger.info(f"Rotated to new API key")
                 
                 continue
             
@@ -268,12 +264,12 @@ async def translate_chunk(
             
             if is_retryable and attempt < max_retries - 1:
                 delay = calculate_backoff(attempt, base_delay=0.5)
-                log(f"Retryable error, waiting {delay:.1f}s...")
+                logger.info(f"Retryable error, waiting {delay:.1f}s...")
                 await asyncio.sleep(delay)
                 continue
             
             # Non-retryable error
-            log(f"Non-retryable error: {e}")
+            logger.info(f"Non-retryable error: {e}")
             break
     
     raise Exception(f"Translation failed after {max_retries} attempts: {last_error}")
@@ -305,7 +301,7 @@ async def translate_batch(
                 await asyncio.sleep(0.5)
                 
         except Exception as e:
-            log(f"Failed to translate chunk {chunk.id}: {e}")
+            logger.info(f"Failed to translate chunk {chunk.id}: {e}")
             # Create failed result
             results.append(TranslatedChunk(
                 id=chunk.id,
@@ -399,7 +395,7 @@ async def translate_chunks_batch(
                 system_instruction=system_instruction
             )
 
-            log(f"Batch translate attempt {attempt + 1}: {len(chunks)} chunks")
+            logger.info(f"Batch translate attempt {attempt + 1}: {len(chunks)} chunks")
             response = model.generate_content(
                 user_prompt,
                 generation_config=genai.types.GenerationConfig(
@@ -436,18 +432,18 @@ async def translate_chunks_batch(
                     terms_used=terms_used,
                     tokens_used=None,
                 ))
-            log(f"Batch translate succeeded: {len(chunks)} chunks in 1 call")
+            logger.info(f"Batch translate succeeded: {len(chunks)} chunks in 1 call")
             return results
 
         except Exception as e:
             last_error = e
             error_msg = str(e).lower()
-            log(f"Batch translate error (attempt {attempt + 1}): {e}")
+            logger.info(f"Batch translate error (attempt {attempt + 1}): {e}")
 
             is_rate_limit = any(x in error_msg for x in ["429", "rate", "quota", "resource_exhausted"])
             if is_rate_limit:
                 delay = calculate_backoff(attempt)
-                log(f"Rate limited, backing off {delay:.1f}s")
+                logger.info(f"Rate limited, backing off {delay:.1f}s")
                 await asyncio.sleep(delay)
                 if rotate_gemini_key():
                     api_key = get_current_gemini_key()
