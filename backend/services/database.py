@@ -153,6 +153,20 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_nodes_state ON nodes(state)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_translations_node ON translations(node_id)")
             
+            # Glossary table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS glossary (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    english TEXT NOT NULL UNIQUE,
+                    chinese TEXT NOT NULL,
+                    notes TEXT,
+                    category TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_glossary_english ON glossary(english)")
+            
             logger.info(f"Database initialized: {self.db_path}")
     
     # ==================== Document Operations ====================
@@ -465,6 +479,99 @@ class Database:
                 "failed": stats[NodeState.FAILED.value],
                 "progress_percent": int(completed / total * 100) if total > 0 else 0
             }
+
+    # ==================== Glossary Operations ====================
+
+    def list_glossary(self, category: str | None = None, search: str | None = None) -> list[dict]:
+        """List glossary terms with optional filters."""
+        with self.get_connection() as conn:
+            query = "SELECT * FROM glossary WHERE 1=1"
+            params: list = []
+            if category:
+                query += " AND category = ?"
+                params.append(category)
+            if search:
+                query += " AND (english LIKE ? OR chinese LIKE ?)"
+                params.extend([f"%{search}%", f"%{search}%"])
+            query += " ORDER BY english"
+            return [dict(row) for row in conn.execute(query, params).fetchall()]
+
+    def list_glossary_categories(self) -> list[str]:
+        """List all unique categories."""
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT category FROM glossary WHERE category IS NOT NULL AND category != '' ORDER BY category"
+            ).fetchall()
+            return [row['category'] for row in rows]
+
+    def get_glossary_term(self, term_id: int) -> dict | None:
+        """Get a single glossary term."""
+        with self.get_connection() as conn:
+            row = conn.execute("SELECT * FROM glossary WHERE id = ?", (term_id,)).fetchone()
+            return dict(row) if row else None
+
+    def create_glossary_term(self, english: str, chinese: str, notes: str | None = None, category: str | None = None) -> dict:
+        """Create a new glossary term. Returns the created term."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO glossary (english, chinese, notes, category) VALUES (?, ?, ?, ?)",
+                (english, chinese, notes, category)
+            )
+            return {"id": cursor.lastrowid, "english": english, "chinese": chinese, "notes": notes, "category": category}
+
+    def update_glossary_term(self, term_id: int, english: str, chinese: str, notes: str | None = None, category: str | None = None) -> bool:
+        """Update a glossary term."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE glossary SET english=?, chinese=?, notes=?, category=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (english, chinese, notes, category, term_id)
+            )
+            return cursor.rowcount > 0
+
+    def delete_glossary_term(self, term_id: int) -> bool:
+        """Delete a glossary term."""
+        with self.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM glossary WHERE id = ?", (term_id,))
+            return cursor.rowcount > 0
+
+    def clear_glossary(self) -> int:
+        """Delete all glossary terms. Returns count deleted."""
+        with self.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM glossary")
+            return cursor.rowcount
+
+    def upload_glossary_csv(self, rows: list[tuple[str, str, str | None, str | None]]) -> dict:
+        """
+        Bulk upsert glossary terms from CSV rows.
+        Each row: (english, chinese, notes, category)
+        Returns {terms_added, terms_updated, errors}
+        """
+        added = 0
+        updated = 0
+        errors = []
+        with self.get_connection() as conn:
+            for i, (english, chinese, notes, category) in enumerate(rows):
+                if not english or not chinese:
+                    errors.append(f"Row {i+1}: Empty term or translation")
+                    continue
+                try:
+                    # Check if exists
+                    existing = conn.execute("SELECT id FROM glossary WHERE english = ?", (english,)).fetchone()
+                    if existing:
+                        conn.execute(
+                            "UPDATE glossary SET chinese=?, notes=?, category=?, updated_at=CURRENT_TIMESTAMP WHERE english=?",
+                            (chinese, notes, category, english)
+                        )
+                        updated += 1
+                    else:
+                        conn.execute(
+                            "INSERT INTO glossary (english, chinese, notes, category) VALUES (?, ?, ?, ?)",
+                            (english, chinese, notes, category)
+                        )
+                        added += 1
+                except Exception as e:
+                    errors.append(f"Row {i+1}: {str(e)}")
+        return {"terms_added": added, "terms_updated": updated, "errors": errors[:10]}
 
 
 # Global database instance

@@ -14,6 +14,10 @@ from routers.keys import get_current_gemini_key, rotate_gemini_key
 
 logger = logging.getLogger(__name__)
 
+# Limit concurrent translation requests to avoid rate limiting
+# and SQLite write contention
+_translation_semaphore = asyncio.Semaphore(3)
+
 
 def find_relevant_terms(text: str, glossary: list[GlossaryEntry]) -> list[GlossaryEntry]:
     """Find glossary terms that appear in the text."""
@@ -25,64 +29,48 @@ def find_relevant_terms(text: str, glossary: list[GlossaryEntry]) -> list[Glossa
 
 
 def get_system_instruction(relevant_terms: list[GlossaryEntry]) -> str:
-    """
-    Generate system instruction for Gemini.
-    Uses system_instruction parameter to prevent prompt leakage.
-    """
+    """Generate system instruction for Gemini."""
     glossary_section = ""
     if relevant_terms:
-        terms_list = "\n".join([f"  - {t.english} → {t.chinese}" for t in relevant_terms])
-        glossary_section = f"""
+        terms_list = "\n".join([f"  - {t.english} -> {t.chinese}" for t in relevant_terms])
+        glossary_section = "\n\nMANDATORY TERMINOLOGY (use these exact translations):\n" + terms_list
 
-MANDATORY TERMINOLOGY (use these exact translations):
-{terms_list}"""
-    
-    return f"""You are a technical translator (English → Simplified Chinese).
-
-CRITICAL: PRESERVE MARKDOWN STRUCTURE EXACTLY
-The input is Markdown. Your output MUST have IDENTICAL structure:
-- Same number of lines
-- Same markdown syntax in same positions
-- Only translate the text content, not the formatting
-
-STRUCTURE PRESERVATION RULES:
-1. Headings: Keep # symbols in same positions
-   Input:  # Introduction
-   Output: # 引言
-
-2. Tables: Keep | separators and structure exactly
-   Input:  | Name | Value |
-   Output: | 名称 | 值 |
-
-3. Lists: Keep - or * or 1. in same positions
-   Input:  - First item
-   Output: - 第一项
-
-4. Code blocks: Do NOT translate content inside ```code blocks```
-
-5. Links: Translate display text only, keep URL unchanged
-   Input:  [Click here](http://example.com)
-   Output: [点击这里](http://example.com)
-
-6. Formatting: Keep **bold**, *italic*, `code` markers around translated text
-
-7. Line breaks: Preserve all blank lines and line breaks exactly
-
-DO NOT:
-- Add or remove lines
-- Add explanations or notes
-- Change markdown syntax
-- Translate code, URLs, paths, or standard numbers (EN 13001, ISO 9001)
-
-OUTPUT: Only the translated text with identical structure. No commentary.
-{glossary_section}"""
+    return (
+        "You are a technical translator (English -> Simplified Chinese).\n\n"
+        "CRITICAL: PRESERVE MARKDOWN STRUCTURE EXACTLY\n"
+        "The input is Markdown. Your output MUST have IDENTICAL structure:\n"
+        "- Same number of lines\n"
+        "- Same markdown syntax in same positions\n"
+        "- Only translate the text content, not the formatting\n\n"
+        "STRUCTURE PRESERVATION RULES:\n"
+        "1. Headings: Keep # symbols in same positions\n"
+        "   Input:  # Introduction\n"
+        "   Output: # \xe5\xbc\x95\xe8\xa8\x80\n\n"
+        "2. Tables: Keep | separators and structure exactly\n"
+        "   Input:  | Name | Value |\n"
+        "   Output: | \xe5\x90\x8d\xe7\xa7\xb0 | \xe5\x80\xbc |\n\n"
+        "3. Lists: Keep - or * or 1. in same positions\n"
+        "   Input:  - First item\n"
+        "   Output: - \xe7\xac\xac\xe4\xb8\x80\xe9\xa1\xb9\n\n"
+        "4. Code blocks: Do NOT translate content inside code blocks (use backtick x3)\n\n"
+        "5. Links: Translate display text only, keep URL unchanged\n"
+        "   Input:  [Click here](http://example.com)\n"
+        "   Output: [\xe7\x82\xb9\xe5\x87\xbb\xe8\xbf\x99\xe9\x87\x8c](http://example.com)\n\n"
+        "6. Formatting: Keep **bold**, *italic*, `code` markers around translated text\n\n"
+        "7. Line breaks: Preserve all blank lines and line breaks exactly\n\n"
+        "DO NOT:\n"
+        "- Add or remove lines\n"
+        "- Add explanations or notes\n"
+        "- Change markdown syntax\n"
+        "- Translate code, URLs, paths, or standard numbers (EN 13001, ISO 9001)\n\n"
+        "OUTPUT: Only the translated text with identical structure. No commentary.\n"
+        + glossary_section
+    )
 
 
 def generate_user_prompt(text: str) -> str:
     """Generate user prompt with just the text to translate."""
-    return f"""Translate to Chinese:
-
-{text}"""
+    return "Translate to Chinese:\n\n" + text
 
 
 def clean_response(text: str) -> str:
@@ -176,7 +164,23 @@ async def translate_chunk(
     Translate a single chunk with glossary constraints.
     
     Features:
-    - Exponential backoff on rate limits (1s → 2s → 4s → 8s → 16s)
+    - Concurrency semaphore (max 3 concurrent translations)
+    - Exponential backoff on rate limits (1s -> 2s -> 4s -> 8s -> 16s)
+    - API key rotation on 429 errors
+    """
+    async with _translation_semaphore:
+        return await _translate_chunk_inner(chunk, glossary, on_status, max_retries)
+
+
+async def _translate_chunk_inner(
+    chunk: Chunk,
+    glossary: list[GlossaryEntry],
+    on_status: Optional[callable] = None,
+    max_retries: int = 5
+) -> TranslatedChunk:
+    """
+    Inner translation logic with retry and rate limit handling.
+    - Exponential backoff on rate limits
     - API key rotation on 429 errors
     - Detailed error logging
     """
@@ -328,20 +332,21 @@ def _batch_system_instruction(relevant_terms: list[GlossaryEntry]) -> str:
     """System instruction for batched multi-chunk translation."""
     glossary_section = ""
     if relevant_terms:
-        terms_list = "\n".join([f"  - {t.english} → {t.chinese}" for t in relevant_terms])
-        glossary_section = f"\n\nMANDATORY TERMINOLOGY (use these exact translations):\n{terms_list}"
+        terms_list = "\n".join([f"  - {t.english} -> {t.chinese}" for t in relevant_terms])
+        glossary_section = "\n\nMANDATORY TERMINOLOGY (use these exact translations):\n" + terms_list
 
-    return f"""You are a technical translator (English → Simplified Chinese).
-
-You will receive multiple text segments separated by the marker: {_SPLIT_MARKER}
-
-RULES:
-1. Translate EACH segment individually into Chinese.
-2. Return the translations in the SAME ORDER, separated by the EXACT SAME marker: {_SPLIT_MARKER}
-3. You MUST produce exactly the same number of {_SPLIT_MARKER} separators as in the input.
-4. Do NOT merge or reorder segments.
-5. Preserve all numbers, standard codes (EN, ISO, IEC …), punctuation, and dots (…) exactly.
-6. Do NOT add commentary, notes, or extra text outside the translated segments.{glossary_section}"""
+    return (
+        "You are a technical translator (English -> Simplified Chinese).\n\n"
+        "You will receive multiple text segments separated by the marker: " + _SPLIT_MARKER + "\n\n"
+        "RULES:\n"
+        "1. Translate EACH segment individually into Chinese.\n"
+        "2. Return the translations in the SAME ORDER, separated by the EXACT SAME marker: " + _SPLIT_MARKER + "\n"
+        "3. You MUST produce exactly the same number of " + _SPLIT_MARKER + " separators as in the input.\n"
+        "4. Do NOT merge or reorder segments.\n"
+        "5. Preserve all numbers, standard codes (EN, ISO, IEC ...), punctuation, and dots (...) exactly.\n"
+        "6. Do NOT add commentary, notes, or extra text outside the translated segments."
+        + glossary_section
+    )
 
 
 async def translate_chunks_batch(
@@ -357,8 +362,8 @@ async def translate_chunks_batch(
     falls back to translating each chunk individually.
 
     Use this for:
-    - TOC runs (10.8 Emergency … 71  /  10.8.1 Location … 71  / …)
-    - Dashed-list runs (– deletion of …  /  – modification of …)
+    - TOC runs (10.8 Emergency ... 71  /  10.8.1 Location ... 71  / ...)
+    - Dashed-list runs (- deletion of ...  /  - modification of ...)
 
     The skeleton and MD output are completely unaffected.
     """
@@ -411,7 +416,7 @@ async def translate_chunks_batch(
             parts = [p.strip() for p in parts]
 
             if len(parts) != len(chunks):
-                log(
+                logger.info(
                     f"Batch split mismatch: expected {len(chunks)} parts, "
                     f"got {len(parts)}. Falling back to individual translation."
                 )
