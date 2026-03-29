@@ -5,6 +5,7 @@ import { BookOpen, Download, Trash2, Award } from 'lucide-react';
 import { getUserGlossary, downloadUserGlossary, clearUserGlossary } from '../services/userGlossaryService';
 import type { UserGlossaryEntry } from '../services/userGlossaryService';
 import { useState, useEffect } from 'react';
+import ConfirmDialog from './ConfirmDialog';
 
 interface UserGlossaryPanelProps {
     onRefresh?: () => void;
@@ -131,30 +132,15 @@ export default function UserGlossaryPanel({ onRefresh }: UserGlossaryPanelProps)
             </div>
 
             {/* Confirm Clear Dialog */}
-            {showConfirmClear && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl p-6 max-w-md shadow-2xl">
-                        <h4 className="text-lg font-bold text-slate-800 mb-2">Clear User Glossary?</h4>
-                        <p className="text-sm text-slate-600 mb-6">
-                            This will permanently delete all {glossary.length} learned terms. This action cannot be undone.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setShowConfirmClear(false)}
-                                className="flex-1 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleClear}
-                                className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-                            >
-                                Clear Glossary
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmDialog
+                isOpen={showConfirmClear}
+                title="Clear User Glossary?"
+                message={`This will permanently delete all ${glossary.length} learned terms. This action cannot be undone.`}
+                confirmLabel="Clear Glossary"
+                variant="danger"
+                onConfirm={handleClear}
+                onCancel={() => setShowConfirmClear(false)}
+            />
 
             {/* Info Card */}
             <div className="mt-6 p-4 bg-purple-50 rounded-xl border border-purple-100">

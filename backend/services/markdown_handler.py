@@ -554,7 +554,7 @@ def apply_and_render(
 
 # Minimum word count for a chunk to stand alone.
 # Chunks below this threshold are merged with their successor.
-MIN_CHUNK_WORDS = 8
+MIN_CHUNK_WORDS = 12
 
 # Maximum character count for merging adjacent short LIST_ITEM chunks.
 MAX_MERGE_CHARS = 200
@@ -727,7 +727,7 @@ def build_skeleton_and_dict(
     # --- Sub-pass C: HEADER short-chunk grouping ---
     # Adjacent short HEADER chunks (e.g. "1. Scope", "1.1 Purpose") are grouped
     # into one chunk joined by " / " to reduce review queue noise.
-    MIN_HEADER_WORDS = 5
+    MIN_HEADER_WORDS = 6
     HEADER_GROUP_SEP = ' / '
 
     tags = list(chunk_dict.keys())  # refresh
@@ -756,6 +756,45 @@ def build_skeleton_and_dict(
             ):
                 break
             candidate = group_text + HEADER_GROUP_SEP + next_text
+            if len(candidate) > MAX_MERGE_CHARS:
+                break
+            group_text = candidate
+            group_tags.append(next_tag)
+            j += 1
+
+        if len(group_tags) > 1:
+            chunk_dict[tag] = group_text
+            for merged_tag in group_tags[1:]:
+                del chunk_dict[merged_tag]
+                del chunk_types[merged_tag]
+                tags.remove(merged_tag)
+        else:
+            i += 1
+
+    # --- Sub-pass D: TABLE_CELL short-chunk grouping ---
+    # Adjacent TABLE_CELL chunks (table rows) are grouped into a single chunk
+    # to keep table rows together for better translation context.
+    TABLE_ROW_SEPARATOR = ' | '
+
+    tags = list(chunk_dict.keys())  # refresh
+    i = 0
+    while i < len(tags) - 1:
+        tag = tags[i]
+        text = chunk_dict.get(tag)
+        if text is None or chunk_types.get(tag) != NodeType.TABLE_CELL:
+            i += 1
+            continue
+
+        # Collect consecutive TABLE_CELL chunks (a table row)
+        group_tags = [tag]
+        group_text = text
+        j = i + 1
+        while j < len(tags):
+            next_tag = tags[j]
+            if chunk_types.get(next_tag) != NodeType.TABLE_CELL:
+                break
+            next_text = chunk_dict.get(next_tag, "")
+            candidate = group_text + TABLE_ROW_SEPARATOR + next_text
             if len(candidate) > MAX_MERGE_CHARS:
                 break
             group_text = candidate

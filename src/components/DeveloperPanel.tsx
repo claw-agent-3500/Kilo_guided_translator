@@ -19,6 +19,7 @@ interface StatusItem {
 
 export default function DeveloperPanel() {
     const [isExpanded, setIsExpanded] = useState(false);
+    const [isVisible, setIsVisible] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
     const [statuses, setStatuses] = useState<StatusItem[]>([
         { label: 'Backend Connection', status: 'loading', message: 'Checking...' },
@@ -181,6 +182,29 @@ export default function DeveloperPanel() {
                 ? 'ok'
                 : 'loading';
 
+    // Toggle visibility with Ctrl+Shift+D
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+                e.preventDefault();
+                setIsVisible(v => !v);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
+
+    // Collapsed: show just a tiny dot
+    if (!isVisible) {
+        return (
+            <button
+                onClick={() => setIsVisible(true)}
+                className="fixed bottom-4 right-4 z-50 w-3 h-3 rounded-full bg-slate-300 hover:bg-slate-400 transition-colors"
+                title="Developer Panel (Ctrl+Shift+D)"
+            />
+        );
+    }
+
     return (
         <div className="fixed bottom-4 right-4 z-50">
             <div className={`bg-white rounded-lg shadow-lg border transition-all duration-300 ${isExpanded ? 'w-80' : 'w-auto'
@@ -202,7 +226,16 @@ export default function DeveloperPanel() {
                         )}
                     </div>
                     {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-slate-400" />
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setIsVisible(false); }}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                                title="Hide (Ctrl+Shift+D)"
+                            >
+                                ✕
+                            </button>
+                            <ChevronDown className="w-4 h-4 text-slate-400" />
+                        </div>
                     ) : (
                         <ChevronUp className="w-4 h-4 text-slate-400" />
                     )}
