@@ -237,7 +237,8 @@ async def get_document_chunks(document_id: int):
                 "index": node["idx"],
                 "translation": node.get("translation"),
                 "state": node.get("state"),
-                "node_id": node["id"]
+                "node_id": node["id"],
+                "block_type": node.get("block_type", "paragraph")
             })
     
     # Sort by index to ensure correct order

@@ -22,22 +22,22 @@ MINERU_SIZE_LIMIT = 30 * 1024 * 1024  # 30MB
 def _ingest_document_skeleton(doc_id: int, markdown_text: str) -> int:
     """
     After a document is created in the DB, build its skeleton and store it.
-    Creates one node per translatable chunk, with chunk_tag populated.
+    Creates one node per translatable chunk, with chunk_tag and block_type populated.
 
     Returns the number of nodes created.
     """
     db = get_database()
-    skeleton, chunk_dict = build_skeleton_and_dict(markdown_text)
+    skeleton, chunk_dict, chunk_types = build_skeleton_and_dict(markdown_text)
 
     # Persist skeleton
     db.save_skeleton(doc_id, skeleton)
 
-    # Create nodes from the chunk dict (preserves order via dict insertion order, Python 3.7+)
+    # Create nodes from the chunk dict with correct block_type
     blocks = [
         {
             "content": original_text,
             "chunk_tag": tag,
-            "type": "paragraph"   # block_type; refined later if needed
+            "type": chunk_types.get(tag, "paragraph")
         }
         for tag, original_text in chunk_dict.items()
     ]

@@ -567,14 +567,16 @@ LIST_GROUP_SEP = ' | '
 
 def build_skeleton_and_dict(
     markdown: str
-) -> Tuple[str, Dict[str, str]]:
+) -> Tuple[str, Dict[str, str], Dict[str, str]]:
     """
-    Parse markdown and produce two decoupled objects:
+    Parse markdown and produce three decoupled objects:
 
     skeleton   — Full markdown with translatable text replaced by [CHUNK_001] tags.
                  All structural syntax (|, #, >, -, **, $...$) is preserved exactly.
 
     chunk_dict — {"CHUNK_001": "Original English text", ...}
+
+    chunk_types — {"CHUNK_001": "heading", "CHUNK_002": "paragraph", ...}
                  Contains only the plain translatable text, indexed by tag.
                  Inline elements (formulas, URLs, inline code) are stored as
                  protected placeholders inside chunk_dict values so they survive
@@ -824,7 +826,10 @@ def build_skeleton_and_dict(
         skeleton = skeleton.replace(f"[{orphaned_tag}]\n", "")
         skeleton = skeleton.replace(f"[{orphaned_tag}]", "")
 
-    return skeleton, chunk_dict
+    # Convert NodeType enum values to string type names for the API
+    chunk_type_strings = {tag: ct.value for tag, ct in chunk_types.items()}
+
+    return skeleton, chunk_dict, chunk_type_strings
 
 
 def reconstruct_from_skeleton(
