@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Background Task Service - Async job queue for translation tasks.
 
@@ -168,7 +170,7 @@ class TranslationQueue:
         """Debug logger."""
         import datetime as dt
         ts = dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        print(f"[{ts}] [Queue] {msg}")
+        logger.info(f"[Queue] {msg}")
     
     async def start(self):
         """Start the background worker."""

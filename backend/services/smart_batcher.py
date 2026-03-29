@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Smart Batcher Service - Semantic chunking for optimal API usage.
 
@@ -102,7 +104,7 @@ class SmartBatcher:
         """Debug logger."""
         import datetime
         ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        print(f"[{ts}] [Batcher] {msg}")
+        logger.info(f"[Batcher] {msg}")
     
     def detect_block_type(self, text: str) -> Tuple[BlockType, int]:
         """

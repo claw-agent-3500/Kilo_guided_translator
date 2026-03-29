@@ -3,7 +3,6 @@ Chunk Manager Service - Text chunking for translation.
 """
 
 import re
-from typing import Iterator
 from models.requests import Chunk
 
 

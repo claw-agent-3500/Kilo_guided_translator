@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Structure-Preserving Translation Service.
 
@@ -13,10 +15,8 @@ This GUARANTEES structure preservation - Gemini never sees formatting!
 import asyncio
 from typing import List, Dict, Optional, Callable
 from services.markdown_handler import (
-    parse_markdown,
     extract_for_translation,
     apply_and_render,
-    MarkdownAST
 )
 from models.requests import GlossaryEntry
 import google.generativeai as genai
@@ -26,7 +26,7 @@ from routers.keys import get_current_gemini_key
 def log(msg: str):
     import datetime
     ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts}] [StructuredTranslator] {msg}")
+    logger.info(f"[StructuredTranslator] {msg}")
 
 
 def build_text_only_prompt(texts: List[str], glossary: List[GlossaryEntry]) -> str:

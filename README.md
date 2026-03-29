@@ -55,6 +55,30 @@
 
 5. Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+### Backend Setup (Optional)
+
+The backend handles translation, PDF parsing, and export. The frontend works without it (using client-side Gemini calls), but the backend enables MinerU PDF extraction, SSE streaming, and Markdown export.
+
+```bash
+cd backend
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # Linux/Mac
+# venv\Scripts\activate   # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment (copy and edit)
+cp .env.example .env
+
+# Start the server
+uvicorn main:app --reload --port 8000
+```
+
+Backend API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
 ## 📖 Usage Guide
 
 1. **Setup API Key**: Click on the **Key** icon in the header to add your Gemini API keys.

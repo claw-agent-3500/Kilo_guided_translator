@@ -6,7 +6,6 @@ import logging
 import google.generativeai as genai
 import asyncio
 import random
-import time
 from typing import Optional
 from models.requests import GlossaryEntry, Chunk
 from models.responses import TranslatedChunk, TermMatch
